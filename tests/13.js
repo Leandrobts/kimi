@@ -1,4 +1,5 @@
-﻿\'use strict\';\n/**
+'use strict';
+/**
  * Teste 13 — MessagePort closed state: UAF / State Corruption EXPLOITAÇÃO
  *
  * Bug confirmado nos Testes 6 e 8:
@@ -26,10 +27,10 @@
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
-  global.FuzzerTests[\'13\'] = {
+  global.FuzzerTests['13'] = {
     id      : 13,
-    name    : \'MessagePort closed state — UAF / State Corruption EXPLOITAÇÃO\',
-    category: \'Messaging-Exploit\',
+    name    : 'MessagePort closed state — UAF / State Corruption EXPLOITAÇÃO',
+    category: 'Messaging-Exploit',
     timeout : 8000,
 
     run: function () {
@@ -38,12 +39,12 @@
         var pending   = 6;
 
         function done(varName, anomaly) {
-          if (anomaly) anomalies.push(varName + \': \' + anomaly);
+          if (anomaly) anomalies.push(varName + ': ' + anomaly);
           if (--pending <= 0) {
             if (anomalies.length > 0) {
-              resolve({ status: \'ANOMALY\', detail: anomalies.join(\' | \') });
+              resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
             } else {
-              resolve({ status: \'PASS\', detail: \'A-F sem anomalias\' });
+              resolve({ status: 'PASS', detail: 'A-F sem anomalias' });
             }
           }
         }
@@ -71,12 +72,12 @@
               if (buf.byteLength === 0) {
                 /* Buffer foi detached mas porta está fechada!
                  * A mensagem nunca será entregue → UAF do buffer */
-                anomalies.push(\'A: CRÍTICO — ArrayBuffer detached em transfer para porta FECHADA\');
+                anomalies.push('A: CRÍTICO — ArrayBuffer detached em transfer para porta FECHADA');
 
                 /* Tentar acessar o buffer detached */
                 try {
                   var v = new Uint8Array(buf);
-                  anomalies.push(\'A: Uint8Array de buffer detached criada sem exceção (length=\' + v.length + \')\');
+                  anomalies.push('A: Uint8Array de buffer detached criada sem exceção (length=' + v.length + ')');
                 } catch (e2) {
                   /* TypeError esperado */
                 }
@@ -86,9 +87,9 @@
             } catch (e) {
               /* Se lançou exceção, comportamento correto */
             }
-            done(\'A\');
+            done('A');
           } catch (e) {
-            done(\'A\', String(e));
+            done('A', String(e));
           }
         }());
 
@@ -116,15 +117,15 @@
 
             setTimeout(function () {
               if (received) {
-                anomalies.push(\'B: mensagem chegou em port2 mesmo com port1 fechada\');
+                anomalies.push('B: mensagem chegou em port2 mesmo com port1 fechada');
               }
               if (buf.byteLength === 0 && !received) {
-                anomalies.push(\'B: buffer detached mas mensagem NÃO entregue → UAF\');
+                anomalies.push('B: buffer detached mas mensagem NÃO entregue → UAF');
               }
-              done(\'B\');
+              done('B');
             }, 500);
           } catch (e) {
-            done(\'B\', String(e));
+            done('B', String(e));
           }
         }());
 
@@ -146,11 +147,11 @@
               } catch (_) {}
             }
             if (uafCount > 0) {
-              anomalies.push(\'C: \' + uafCount + \'/50 transfers para porta fechada detacharam buffer\');
+              anomalies.push('C: ' + uafCount + '/50 transfers para porta fechada detacharam buffer');
             }
-            done(\'C\');
+            done('C');
           } catch (e) {
-            done(\'C\', String(e));
+            done('C', String(e));
           }
         }());
 
@@ -164,16 +165,16 @@
             mc.port2.start();
 
             mc.port1.close();
-            mc.port2.postMessage(\'test\');
+            mc.port2.postMessage('test');
 
             setTimeout(function () {
               if (received) {
-                anomalies.push(\'D: porta fechada ainda recebeu mensagem\');
+                anomalies.push('D: porta fechada ainda recebeu mensagem');
               }
-              done(\'D\');
+              done('D');
             }, 500);
           } catch (e) {
-            done(\'D\', String(e));
+            done('D', String(e));
           }
         }());
 
@@ -187,17 +188,17 @@
 
             var threw = false;
             try {
-              mc.port1.postMessage(\'after-double-close\');
+              mc.port1.postMessage('after-double-close');
             } catch (e) {
               threw = true;
             }
 
             if (!threw) {
-              anomalies.push(\'E: postMessage após double-close não lançou\');
+              anomalies.push('E: postMessage após double-close não lançou');
             }
-            done(\'E\');
+            done('E');
           } catch (e) {
-            done(\'E\', String(e));
+            done('E', String(e));
           }
         }());
 
@@ -214,18 +215,18 @@
             /* Postar de port2 (lado do emissor) */
             var threw = false;
             try {
-              mc.port2.postMessage(\'to-closed\');
+              mc.port2.postMessage('to-closed');
             } catch (e) {
               threw = true;
             }
 
             if (!threw) {
               /* port2 não deveria saber que port1 está fechada */
-              anomalies.push(\'F: port2.postMessage não lançou após port1.close()\');
+              anomalies.push('F: port2.postMessage não lançou após port1.close()');
             }
-            done(\'F\');
+            done('F');
           } catch (e) {
-            done(\'F\', String(e));
+            done('F', String(e));
           }
         }());
 
