@@ -15,7 +15,7 @@
   global.FuzzerTests['1'] = {
     id      : 1,
     name    : 'Array.sort - mutação de length/tipo via comparator (v1.2)',
-    category: 'JSC-Array\',
+    category: 'JSC-Array',
     timeout : 4000,
 
     run: function () {
