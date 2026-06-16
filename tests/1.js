@@ -1,4 +1,5 @@
-'use strict';/**
+'use strict';
+/**
  * Teste 1 — Array.prototype.sort: mutação de estado via comparator (v1.2)
  *
  * CORREÇÃO v1.2:
@@ -38,14 +39,14 @@
           });
 
           if (a.length < origLen) {
-            anomalies.push(\'A: length corrompido após push (\' + a.length + \'<\' + origLen + \')\');
+            anomalies.push('A: length corrompido após push (' + a.length + '<' + origLen + ')');
           }
           var oob = a[origLen + 8];
           if (oob !== undefined && oob !== MARKER) {
-            anomalies.push(\'A: OOB read valor inesperado: a[\' + (origLen + 8) + \']=\' + oob);
+            anomalies.push('A: OOB read valor inesperado: a[' + (origLen + 8) + ']=' + oob);
           }
         } catch (e) {
-          anomalies.push(\'A: exceção: \' + String(e));
+          anomalies.push('A: exceção: ' + String(e));
         }
       }());
 
@@ -69,13 +70,13 @@
               /* Forçar transição DoubleArray → ContiguousArray */
               a[0] = {};
             }
-            return (typeof x === \'number\' && typeof y === \'number\') ? (x - y) : 0;
+            return (typeof x === 'number' && typeof y === 'number') ? (x - y) : 0;
           });
 
           /* Verificar: há algum objeto no array resultante? */
           var hasObject = false;
           for (var i = 0; i < a.length; i++) {
-            if (typeof a[i] === \'object\' && a[i] !== null) {
+            if (typeof a[i] === 'object' && a[i] !== null) {
               hasObject = true;
               break;
             }
@@ -93,19 +94,19 @@
           for (var j = 4; j < 16; j++) {
             var v = a[j];
             if (v !== undefined) {
-              if (typeof v === \'object\' && v !== null) {
-                leaks.push({ idx: j, type: \'object\' });
-              } else if (typeof v === \'number\' && (v < -1e10 || v > 1e10 || isNaN(v))) {
-                leaks.push({ idx: j, type: \'suspicious-double\', val: v });
+              if (typeof v === 'object' && v !== null) {
+                leaks.push({ idx: j, type: 'object' });
+              } else if (typeof v === 'number' && (v < -1e10 || v > 1e10 || isNaN(v))) {
+                leaks.push({ idx: j, type: 'suspicious-double', val: v });
               }
             }
           }
           if (leaks.length > 0) {
-            anomalies.push(\'B: possível type confusion além do length: \' + JSON.stringify(leaks));
+            anomalies.push('B: possível type confusion além do length: ' + JSON.stringify(leaks));
           }
         } catch (e) {
           if (!(e instanceof TypeError)) {
-            anomalies.push(\'B: exceção inesperada: \' + String(e));
+            anomalies.push('B: exceção inesperada: ' + String(e));
           }
         }
       }());
@@ -122,17 +123,17 @@
               a[0] = {};
               a[1] = MARKER;
             }
-            if (typeof x !== \'number\' || typeof y !== \'number\') return 0;
+            if (typeof x !== 'number' || typeof y !== 'number') return 0;
             return x - y;
           });
 
           var pos = a.indexOf(MARKER);
           if (pos !== -1 && pos > 2) {
-            anomalies.push(\'C: MARKER em posição suspeita: a[\' + pos + \']=\' + MARKER);
+            anomalies.push('C: MARKER em posição suspeita: a[' + pos + ']=' + MARKER);
           }
         } catch (e) {
           if (!(e instanceof TypeError)) {
-            anomalies.push(\'C: exceção inesperada: \' + String(e));
+            anomalies.push('C: exceção inesperada: ' + String(e));
           }
         }
       }());
@@ -154,14 +155,14 @@
           if (a[10] === MARKER) {
             var beyond = a[11];
             if (beyond !== undefined) {
-              anomalies.push(\'D: read beyond [11]=\' + beyond);
+              anomalies.push('D: read beyond [11]=' + beyond);
             }
           }
           if (a.length !== 7 && a.length !== 11) {
-            anomalies.push(\'D: length inesperado após sort: \' + a.length);
+            anomalies.push('D: length inesperado após sort: ' + a.length);
           }
         } catch (e) {
-          anomalies.push(\'D: exceção: \' + String(e));
+          anomalies.push('D: exceção: ' + String(e));
         }
       }());
 
@@ -179,14 +180,14 @@
               pushed = true;
               a.push({ injected: true });
             }
-            if (typeof x !== \'number\' || typeof y !== \'number\') return 0;
+            if (typeof x !== 'number' || typeof y !== 'number') return 0;
             return x - y;
           });
 
           /* Verificar se o objeto injetado sobreviveu */
           var found = false;
           for (var i = 0; i < a.length; i++) {
-            if (typeof a[i] === \'object\' && a[i] !== null && a[i].injected) {
+            if (typeof a[i] === 'object' && a[i] !== null && a[i].injected) {
               found = true;
               break;
             }
@@ -196,15 +197,15 @@
           }
         } catch (e) {
           if (!(e instanceof TypeError)) {
-            anomalies.push(\'E: exceção inesperada: \' + String(e));
+            anomalies.push('E: exceção inesperada: ' + String(e));
           }
         }
       }());
 
       if (anomalies.length > 0) {
-        return { status: \'ANOMALY\', detail: anomalies.join(\' | \') };
+        return { status: 'ANOMALY', detail: anomalies.join(' | ') };
       }
-      return { status: \'PASS\', detail: \'A-E sem anomalias\' };
+      return { status: 'PASS', detail: 'A-E sem anomalias' };
     }
   };
 
