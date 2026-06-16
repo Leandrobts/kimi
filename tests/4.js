@@ -1,4 +1,5 @@
-'use strict';/**
+'use strict';
+/**
  * Teste 4 — DOM lifecycle stress (v1.2)
  *
  * CORREÇÃO v1.2:
@@ -24,20 +25,20 @@
     run: function () {
       return new Promise(function (resolve) {
         var anomalies = [];
-        var root      = document.createElement(\'div\');
+        var root      = document.createElement('div');
         document.body.appendChild(root);
 
         /* ── Variante A: ciclo create/append/remove com listener re-entrante ── */
         (function variantA() {
           for (var i = 0; i < 200; i++) {
-            var parent = document.createElement(\'div\');
-            var child  = document.createElement(\'span\');
+            var parent = document.createElement('div');
+            var child  = document.createElement('span');
             parent.appendChild(child);
             root.appendChild(parent);
 
-            child.addEventListener(\'click\', function onClick(e) {
+            child.addEventListener('click', function onClick(e) {
               var node = e.currentTarget;
-              node.removeEventListener(\'click\', onClick);
+              node.removeEventListener('click', onClick);
               if (node.parentNode) {
                 try { node.parentNode.removeChild(node); } catch (_) {}
               }
@@ -46,7 +47,7 @@
             root.removeChild(parent);
           }
           if (root.childNodes.length !== 0) {
-            anomalies.push(\'A: root tem \' + root.childNodes.length + \' filhos após cleanup\');
+            anomalies.push('A: root tem ' + root.childNodes.length + ' filhos após cleanup');
           }
         }());
 
@@ -56,7 +57,7 @@
          */
         (function variantB() {
           return new Promise(function (res) {
-            var observed  = document.createElement(\'div\');
+            var observed  = document.createElement('div');
             root.appendChild(observed);
             var callbackCount = 0;
             var removedCount  = 0;
@@ -78,7 +79,7 @@
             obs.observe(observed, { childList: true, subtree: true });
 
             for (var i = 0; i < 50; i++) {
-              var el = document.createElement(\'p\');
+              var el = document.createElement('p');
               observed.appendChild(el);
             }
 
@@ -86,13 +87,13 @@
             setTimeout(function () {
               if (callbackCount === 0) {
                 /* Callback nunca disparou mesmo sem disconnect() — BUG REAL */
-                anomalies.push(\'B: CRÍTICO — MutationObserver callback NUNCA disparou (50 appendChild, sem disconnect)\');
+                anomalies.push('B: CRÍTICO — MutationObserver callback NUNCA disparou (50 appendChild, sem disconnect)');
               } else if (removedCount === 0) {
                 /* Callback disparou mas não removeu nada */
-                anomalies.push(\'B: callback disparou \' + callbackCount + \'x mas removedCount=0\');
+                anomalies.push('B: callback disparou ' + callbackCount + 'x mas removedCount=0');
               } else if (observed.childNodes.length > 0) {
                 /* Callback removeu alguns mas não todos */
-                anomalies.push(\'B: callback removeu \' + removedCount + \' mas childNodes=\' + observed.childNodes.length);
+                anomalies.push('B: callback removeu ' + removedCount + ' mas childNodes=' + observed.childNodes.length);
               }
 
               /* Agora sim desconectar e limpar */
@@ -112,7 +113,7 @@
          */
         (function variantB2() {
           return new Promise(function (res) {
-            var observed  = document.createElement(\'div\');
+            var observed  = document.createElement('div');
             root.appendChild(observed);
             var callbackCount = 0;
             var removedCount  = 0;
@@ -134,7 +135,7 @@
             obs.observe(observed, { childList: true, subtree: true });
 
             for (var i = 0; i < 50; i++) {
-              var el = document.createElement(\'p\');
+              var el = document.createElement('p');
               observed.appendChild(el);
             }
 
@@ -144,7 +145,7 @@
             setTimeout(function () {
               /* Se callbackCount > 0, disconnect() NÃO cancelou callbacks */
               if (callbackCount > 0) {
-                anomalies.push(\'B2: callback disparou após disconnect() (count=\' + callbackCount + \')\');
+                anomalies.push('B2: callback disparou após disconnect() (count=' + callbackCount + ')');
               }
               if (observed.parentNode) {
                 try { observed.parentNode.removeChild(observed); } catch (_) {}
@@ -159,8 +160,8 @@
         /* ── Variante C: iframe lifecycle antes do load ── */
         (function variantC() {
           for (var i = 0; i < 15; i++) {
-            var iframe    = document.createElement(\'iframe\');
-            iframe.srcdoc = \'<html><body>test \' + i + \'</body></html>\';
+            var iframe    = document.createElement('iframe');
+            iframe.srcdoc = '<html><body>test ' + i + '</body></html>';
             root.appendChild(iframe);
 
             if (i % 3 === 0) {
@@ -183,11 +184,11 @@
 
         /* ── Variante D: style mutation + forçar layout ── */
         (function variantD() {
-          var el = document.createElement(\'div\');
+          var el = document.createElement('div');
           root.appendChild(el);
           for (var i = 0; i < 300; i++) {
-            el.style.width   = (i % 100) + \'px\';
-            el.style.display = (i % 2 === 0) ? \'block\' : \'inline-block\';
+            el.style.width   = (i % 100) + 'px';
+            el.style.display = (i % 2 === 0) ? 'block' : 'inline-block';
             if (i % 50 === 0) {
               void el.getBoundingClientRect();
             }
@@ -198,20 +199,20 @@
         /* ── Variante E: EventTarget em nó desanexado ── */
         (function variantE() {
           try {
-            var detached = document.createElement(\'button\');
+            var detached = document.createElement('button');
             var callCount = 0;
             var handler   = function () { callCount++; };
-            detached.addEventListener(\'click\', handler);
-            detached.dispatchEvent(new Event(\'click\'));
-            detached.dispatchEvent(new Event(\'click\'));
-            detached.removeEventListener(\'click\', handler);
-            detached.dispatchEvent(new Event(\'click\'));
+            detached.addEventListener('click', handler);
+            detached.dispatchEvent(new Event('click'));
+            detached.dispatchEvent(new Event('click'));
+            detached.removeEventListener('click', handler);
+            detached.dispatchEvent(new Event('click'));
 
             if (callCount !== 2) {
-              anomalies.push(\'E: callCount=\' + callCount + \' (esperado 2)\');
+              anomalies.push('E: callCount=' + callCount + ' (esperado 2)');
             }
           } catch (e) {
-            anomalies.push(\'E: \' + String(e));
+            anomalies.push('E: ' + String(e));
           }
         }());
 
@@ -223,9 +224,9 @@
           } catch (_) {}
 
           if (anomalies.length > 0) {
-            resolve({ status: \'ANOMALY\', detail: anomalies.join(\' | \') });
+            resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: \'PASS\', detail: \'A-E sem anomalias\' });
+            resolve({ status: 'PASS', detail: 'A-E sem anomalias' });
           }
         }, 2000);
       });
