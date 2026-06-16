@@ -1,4 +1,5 @@
-'use strict';/**
+'use strict';
+/**
  * Teste 10 — Canvas putImageData OOB: tentativa de exploração (v1.1)
  *
  * CORREÇÃO v1.1:
@@ -35,9 +36,9 @@
               v[1] = 64;
             }
 
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             var data = ctx.createImageData(256, 256);
             for (var i = 0; i < data.data.length; i++) data.data[i] = 0x41;
@@ -49,10 +50,10 @@
               if (buffers[i].byteLength !== 64) corrupted++;
             }
             if (corrupted > 0) {
-              anomalies.push(\'A: \' + corrupted + \' ArrayBuffers corrompidos\');
+              anomalies.push('A: ' + corrupted + ' ArrayBuffers corrompidos');
             }
           } catch (e) {
-            anomalies.push(\'A: \' + String(e));
+            anomalies.push('A: ' + String(e));
           }
         }());
 
@@ -68,9 +69,9 @@
               });
             }
 
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 8; canvas.height = 8;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             var data = ctx.createImageData(128, 128);
             for (var i = 0; i < data.data.length; i++) data.data[i] = 0xFF;
@@ -83,10 +84,10 @@
               if (objects[i].marker !== 0xBEEF) corrupted++;
             }
             if (corrupted > 0) {
-              anomalies.push(\'B: \' + corrupted + \' objetos corrompidos\');
+              anomalies.push('B: ' + corrupted + ' objetos corrompidos');
             }
           } catch (e) {
-            anomalies.push(\'B: \' + String(e));
+            anomalies.push('B: ' + String(e));
           }
         }());
 
@@ -95,9 +96,9 @@
          */
         (function variantC() {
           try {
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 16; canvas.height = 16;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             /* Preencher com padrão que pode parecer tagged pointer */
             var data = ctx.createImageData(64, 64);
@@ -122,10 +123,10 @@
               }
             }
             if (unexpected > 0) {
-              anomalies.push(\'C: padrão de ponteiro encontrado em região não-overlap (\' + unexpected + \' pixels)\');
+              anomalies.push('C: padrão de ponteiro encontrado em região não-overlap (' + unexpected + ' pixels)');
             }
           } catch (e) {
-            anomalies.push(\'C: \' + String(e));
+            anomalies.push('C: ' + String(e));
           }
         }());
 
@@ -137,9 +138,9 @@
             var arr = new Uint32Array(16);
             for (var i = 0; i < arr.length; i++) arr[i] = 0xDEADBEEF;
 
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
 
             var data = ctx.createImageData(64, 64);
             for (var i = 0; i < data.data.length; i++) data.data[i] = 0xFF;
@@ -151,18 +152,18 @@
               if (arr[i] !== 0xDEADBEEF) corrupted++;
             }
             if (corrupted > 0) {
-              anomalies.push(\'D: \' + corrupted + \' elementos de Uint32Array corrompidos\');
+              anomalies.push('D: ' + corrupted + ' elementos de Uint32Array corrompidos');
             }
           } catch (e) {
-            anomalies.push(\'D: \' + String(e));
+            anomalies.push('D: ' + String(e));
           }
         }());
 
         setTimeout(function () {
           if (anomalies.length > 0) {
-            resolve({ status: \'ANOMALY\', detail: anomalies.join(\' | \') });
+            resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: \'PASS\', detail: \'A-D sem corrupção detectável\' });
+            resolve({ status: 'PASS', detail: 'A-D sem corrupção detectável' });
           }
         }, 2000);
       });
