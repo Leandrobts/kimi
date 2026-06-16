@@ -1,4 +1,5 @@
-﻿\'use strict\';\n/**
+'use strict';
+/**
  * Teste 15 — Chain Exploitation: Proxy + Canvas + MessageChannel
  *
  * Tentativa de encadear bugs confirmados para UAF/RCE:
@@ -15,10 +16,10 @@
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
-  global.FuzzerTests[\'15\'] = {
+  global.FuzzerTests['15'] = {
     id      : 15,
-    name    : \'Chain Exploitation — Proxy + Canvas + MessageChannel\',
-    category: \'Chain-Exploit\',
+    name    : 'Chain Exploitation — Proxy + Canvas + MessageChannel',
+    category: 'Chain-Exploit',
     timeout : 10000,
 
     run: function () {
@@ -41,7 +42,7 @@
             var target = [1, 2, 3, 4, 5];
             var proxy = new Proxy(target, {
               set: function (t, prop, val, recv) {
-                if (prop === \'4\') {
+                if (prop === '4') {
                   /* Tentar corromper o primeiro buffer */
                   var v = new Uint32Array(buffers[0]);
                   v[1] = 0xFFFFFFFF; /* length enorme */
@@ -59,15 +60,15 @@
             for (var i = 0; i < buffers.length; i++) {
               if (buffers[i].byteLength !== 64) {
                 corrupted = true;
-                anomalies.push(\'A: ArrayBuffer[\' + i + \'] corrompido: length=\' + buffers[i].byteLength);
+                anomalies.push('A: ArrayBuffer[' + i + '] corrompido: length=' + buffers[i].byteLength);
               }
             }
 
             /* Canvas OOB para tentar escrever nos buffers */
             if (!corrupted) {
-              var canvas = document.createElement(\'canvas\');
+              var canvas = document.createElement('canvas');
               canvas.width = 4; canvas.height = 4;
-              var ctx = canvas.getContext(\'2d\');
+              var ctx = canvas.getContext('2d');
               var data = ctx.createImageData(256, 256);
               for (var i = 0; i < data.data.length; i++) data.data[i] = 0xFF;
               ctx.putImageData(data, -120, -120);
@@ -75,12 +76,12 @@
               for (var i = 0; i < buffers.length; i++) {
                 var v = new Uint32Array(buffers[i]);
                 if (v[0] !== 0xCAFEBABE) {
-                  anomalies.push(\'A: ArrayBuffer[\' + i + \'] corrompido por Canvas OOB: 0x\' + v[0].toString(16));
+                  anomalies.push('A: ArrayBuffer[' + i + '] corrompido por Canvas OOB: 0x' + v[0].toString(16));
                 }
               }
             }
           } catch (e) {
-            anomalies.push(\'A: \' + String(e));
+            anomalies.push('A: ' + String(e));
           }
         }());
 
@@ -102,9 +103,9 @@
             /* Se o buffer foi detached, tentar usar Canvas OOB para
              * escrever na memória liberada */
             if (buf.byteLength === 0) {
-              var canvas = document.createElement(\'canvas\');
+              var canvas = document.createElement('canvas');
               canvas.width = 4; canvas.height = 4;
-              var ctx = canvas.getContext(\'2d\');
+              var ctx = canvas.getContext('2d');
               var data = ctx.createImageData(512, 512);
               for (var i = 0; i < data.data.length; i += 4) {
                 data.data[i] = 0x41;
@@ -112,10 +113,10 @@
               }
               ctx.putImageData(data, -250, -250);
 
-              anomalies.push(\'B: UAF tentativa — buffer detached, Canvas OOB executado\');
+              anomalies.push('B: UAF tentativa — buffer detached, Canvas OOB executado');
             }
           } catch (e) {
-            anomalies.push(\'B: \' + String(e));
+            anomalies.push('B: ' + String(e));
           }
         }());
 
@@ -129,7 +130,7 @@
             var target = [1, 2, 3, 4, 5];
             var proxy = new Proxy(target, {
               set: function (t, prop, val, recv) {
-                if (prop === \'2\') {
+                if (prop === '2') {
                   /* Fechar porta durante forEach */
                   mc.port1.close();
                 }
@@ -143,11 +144,11 @@
 
             /* Tentar postMessage na porta fechada */
             try {
-              mc.port1.postMessage(\'after-proxy-close\');
-              anomalies.push(\'C: postMessage após close() durante Proxy forEach não lançou\');
+              mc.port1.postMessage('after-proxy-close');
+              anomalies.push('C: postMessage após close() durante Proxy forEach não lançou');
             } catch (_) {}
           } catch (e) {
-            anomalies.push(\'C: \' + String(e));
+            anomalies.push('C: ' + String(e));
           }
         }());
 
@@ -163,7 +164,7 @@
             var target = [1, 2, 3, 4, 5];
             var proxy = new Proxy(target, {
               set: function (t, prop, val, recv) {
-                if (prop === \'4\') {
+                if (prop === '4') {
                   v[1] = 0xFFFFFFFF;
                 }
                 return Reflect.set(t, prop, val, recv);
@@ -172,9 +173,9 @@
             proxy.forEach(function (v, i) { proxy[i] = v * 2; });
 
             /* 3. Canvas OOB */
-            var canvas = document.createElement(\'canvas\');
+            var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
             var data = ctx.createImageData(256, 256);
             for (var i = 0; i < data.data.length; i++) data.data[i] = 0xFF;
             ctx.putImageData(data, -120, -120);
@@ -185,17 +186,17 @@
             mc.port1.close();
             try { mc.port1.postMessage(buf, [buf]); } catch (_) {}
 
-            anomalies.push(\'D: full chain executado sem crash\');
+            anomalies.push('D: full chain executado sem crash');
           } catch (e) {
-            anomalies.push(\'D: \' + String(e));
+            anomalies.push('D: ' + String(e));
           }
         }());
 
         setTimeout(function () {
           if (anomalies.length > 0) {
-            resolve({ status: \'ANOMALY\', detail: anomalies.join(\' | \') });
+            resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: \'PASS\', detail: \'A-D sem anomalias\' });
+            resolve({ status: 'PASS', detail: 'A-D sem anomalias' });
           }
         }, 1000);
       });
