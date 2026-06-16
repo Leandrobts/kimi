@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<meta charset="utf-8">
+
+<title>PS4 WebKit Fuzzer</title>
+
+<style>
+  body { background:#111; color:#eee; font-family:monospace; margin:8px; font-size:13px; }
+  h1   { font-size:15px; margin:4px 0; }
+  button { margin:2px; padding:4px 10px; background:#222; color:#eee; border:1px solid #555; cursor:pointer; }
+  button:hover { background:#333; }
+  #controls { margin:6px 0; }
+  #test-list { margin:6px 0; border:1px solid #333; padding:6px; max-height:140px; overflow-y:auto; }
+  #test-list h3 { margin:0 0 4px 0; font-size:12px; color:#aaa; }
+  #log  { height:340px; overflow-y:auto; background:#000; border:1px solid #333; padding:4px; margin-top:8px; }
+  #status-bar { font-size:11px; color:#888; margin:4px 0; }
+  label { cursor:pointer; }
+</style>
+
+</head>
+<body>
+<h1>PS4 WebKit Fuzzer v1.0</h1>
+
+<div id="controls">
+  <button id="btn-run-all">Run All</button>
+  <button id="btn-run-selected">Run Selected</button>
+  <button id="btn-stop">Stop</button>
+  <button id="btn-clear">Clear Log</button>
+  <button id="btn-export">Export JSON</button>
+  &nbsp;&nbsp;
+  <label><input type="checkbox" id="chk-stop-on-anomaly"> Stop on Anomaly/Crash</label>
+  &nbsp;
+  <label><input type="checkbox" id="chk-all" checked> Todos</label>
+</div>
+
+<div id="test-list">
+  <!-- populado por runner.js -->
+</div>
+
+<div id="status-bar">Aguardando inicialização...</div>
+<div id="log"></div>
+
+<!--
+  INSTRUÇÃO PARA ADICIONAR NOVOS TESTES:
+  1. Crie tests/N.js registrando window.FuzzerTests['N'] = { ... }
+  2. Adicione um <script src="tests/N.js"></script> abaixo, em ordem crescente
+  3. Não altere nenhum outro arquivo
+-->
+<script src="core/logger.js"></script>
+<script src="core/harness.js"></script>
+
+<!-- ===== TESTES — adicionar novos <script> aqui em ordem crescente ===== -->
+<script src="tests/1.js"></script>
+<script src="tests/2.js"></script>
+<script src="tests/3.js"></script>
+<script src="tests/4.js"></script>
+<script src="tests/5.js"></script>
+<script src="tests/6.js"></script>
+<script src="tests/7.js"></script>
+<script src="tests/8.js"><script src="tests/9.js"></script>
+<script src="tests/10.js"></script></script>
+<!-- <script src="tests/9.js"></script> -->
+<!-- ===================================================================== -->
+
+<!-- runner sempre por último -->
+<script src="core/runner.js"></script>
+</body>
+</html>
