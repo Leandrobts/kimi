@@ -1,23 +1,21 @@
 'use strict';
 /**
- * Teste 5 — Canvas 2D: ImageData boundary OOB INVESTIGAÇÃO (v1.1)
+ * Teste 5 â€” Canvas 2D: putImageData OOB INVESTIGAÃ‡ÃƒO (v1.2 SANITY)
  *
- * INVESTIGAÇÃO DOS 225 PIXELS VERMELHOS:
- * O log mostrou 225 pixels vermelhos em região não-overlap após
- * putImageData(large, -16, -16) em canvas 32×32.
- *
- * Novas variantes agressivas:
- *   F — putImageData com offset extremo (-0x7fffffff) para crash
- *   G — putImageData em loop com ImageData crescente (stress OOB)
- *   H — getImageData após putImageData OOB — verificar corrupção
- *   I — createImageData com dimensões negativas (toString/valueOf)
+ * SANITY CHECKS:
+ *   - Variante B: Verificar se o OOB write Ã© reprodutÃ­vel com
+ *     offset positivo (fora dos limites do outro lado).
+ *   - Variante H: Verificar se o padrÃ£o 0x42 Ã© realmente escrito
+ *     pelo putImageData ou se Ã© lixo de memÃ³ria preexistente.
+ *   - Variante J: Teste de controle â€” putImageData com offset vÃ¡lido
+ *     deve NÃƒO escrever fora dos limites.
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['5'] = {
     id      : 5,
-    name    : 'Canvas 2D — putImageData OOB INVESTIGAÇÃO (225 pixels)',
+    name    : 'Canvas 2D - putImageData OOB INVESTIGAÃ‡ÃƒO (v1.2 SANITY)',
     category: 'Canvas',
     timeout : 8000,
 
@@ -33,7 +31,7 @@
           return { canvas: c, ctx: ctx };
         }
 
-        /* -- Variante A: getImageData com origem negativa -- */
+        /* â”€â”€ Variante A: getImageData com origem negativa â”€â”€ */
         (function variantA() {
           try {
             var r   = makeCanvas(64, 64, '#ff0000');
@@ -51,14 +49,14 @@
               }
             }
             if (nonZero > 0) {
-              anomalies.push('A: ' + nonZero + ' bytes não-zero em região fora do canvas');
+              anomalies.push('A: ' + nonZero + ' bytes nÃ£o-zero em regiÃ£o fora do canvas');
             }
           } catch (e) {
-            anomalies.push('A: exceção: ' + String(e));
+            anomalies.push('A: exceÃ§Ã£o: ' + String(e));
           }
         }());
 
-        /* -- Variante B: putImageData com ImageData maior que o canvas (ORIGINAL) -- */
+        /* â”€â”€ Variante B: putImageData OOB original (REPRODUZIDO) â”€â”€ */
         (function variantB() {
           try {
             var r   = makeCanvas(32, 32, null);
@@ -80,82 +78,95 @@
               }
             }
             if (bad > 0) {
-              anomalies.push('B: ' + bad + ' pixels vermelho em região não-overlap (REPRODUZIDO)');
+              anomalies.push('B: ' + bad + ' pixels vermelho em regiÃ£o nÃ£o-overlap (REPRODUZIDO)');
             }
           } catch (e) {
-            anomalies.push('B: exceção: ' + String(e));
+            anomalies.push('B: exceÃ§Ã£o: ' + String(e));
           }
         }());
 
-        /* -- Variante F: putImageData com offset EXTREMO --
-         * Testa se há integer overflow no cálculo de clipping.
-         */
-        (function variantF() {
-          try {
-            var r   = makeCanvas(4, 4, null);
-            var ctx = r.ctx;
-
-            var data = ctx.createImageData(8, 8);
-            for (var i = 0; i < data.data.length; i++) data.data[i] = 0xFF;
-
-            /* Offset negativo extremo — se houver overflow no cálculo interno,
-             * pode escrever em endereços inesperados */
-            ctx.putImageData(data, -2147483648, -2147483648);
-
-            /* Se não crashou, verificar se o canvas foi modificado */
-            var check = ctx.getImageData(0, 0, 4, 4);
-            var modified = 0;
-            for (var i = 0; i < check.data.length; i++) {
-              if (check.data[i] !== 0) modified++;
-            }
-            if (modified > 0) {
-              anomalies.push('F: canvas modificado com offset extremo (modified=' + modified + ')');
-            }
-          } catch (e) {
-            /* Crash ou exceção pode ser o comportamento esperado */
-            var name = e.name || '';
-            if (name !== 'IndexSizeError' && name !== 'RangeError') {
-              anomalies.push('F: exceção inesperada: ' + name + ' — ' + e.message);
-            }
-          }
-        }());
-
-        /* -- Variante G: putImageData em loop stress --
-         * Múltiplas chamadas com ImageData crescente para detectar
-         * corrupção acumulativa ou buffer overflow.
-         */
-        (function variantG() {
+        /* â”€â”€ Variante C: createImageData com dimensÃ£o zero â”€â”€ */
+        (function variantC() {
           try {
             var r   = makeCanvas(16, 16, null);
             var ctx = r.ctx;
-
-            for (var size = 16; size <= 256; size *= 2) {
-              var data = ctx.createImageData(size, size);
-              for (var i = 0; i < data.data.length; i += 4) {
-                data.data[i] = size & 0xFF;
-                data.data[i + 3] = 0xFF;
+            var cases = [[0, 16], [16, 0], [0, 0], [-1, 16], [16, -1]];
+            cases.forEach(function (pair) {
+              try {
+                var id = ctx.createImageData(pair[0], pair[1]);
+                if (id && id.data && id.data.length === 0 && (pair[0] === 0 || pair[1] === 0)) {
+                  /* AceitÃ¡vel */
+                } else if (id && id.width === Math.abs(pair[0]) && id.height === Math.abs(pair[1])) {
+                  /* OK */
+                } else if (id) {
+                  anomalies.push('C: createImageData(' + pair + ') => ' + id.width + 'x' + id.height);
+                }
+              } catch (e2) {
+                var name = e2.name || (e2.constructor && e2.constructor.name) || 'Error';
+                if (name !== 'IndexSizeError' && name !== 'RangeError' && !(e2 instanceof DOMException)) {
+                  anomalies.push('C: createImageData(' + pair + ') lanÃ§ou ' + name);
+                }
               }
-              ctx.putImageData(data, -size / 4, -size / 4);
-            }
-
-            /* Verificar integridade: canvas deve estar dentro dos limites */
-            var check = ctx.getImageData(0, 0, 16, 16);
-            /* Não há critério exato — apenas verificar que não crashou */
+            });
           } catch (e) {
-            anomalies.push('G: exceção durante loop stress: ' + String(e));
+            anomalies.push('C: setup: ' + String(e));
           }
         }());
 
-        /* -- Variante H: getImageData após putImageData OOB --
-         * Verifica se a leitura OOB é consistente (indicando corrupção
-         * real) ou aleatória (indicando lixo de memória).
+        /* â”€â”€ Variante D: createImageBitmap lifecycle stress â”€â”€ */
+        (function variantD() {
+          if (typeof createImageBitmap !== 'function') return;
+          var r   = makeCanvas(128, 128, '#00ff00');
+
+          var promises = [];
+          for (var i = 0; i < 30; i++) {
+            (function (idx) {
+              var opts = (idx % 4 === 0) ? { resizeWidth: 1, resizeHeight: 1 }
+                : (idx % 4 === 1) ? { resizeWidth: 256, resizeHeight: 256 }
+                : (idx % 4 === 2) ? { imageOrientation: 'flipY' }
+                : {};
+
+              var p = createImageBitmap(r.canvas, 0, 0, 128, 128, opts)
+                .then(function (bmp) {
+                  var tmp = makeCanvas(bmp.width, bmp.height, null);
+                  tmp.ctx.drawImage(bmp, 0, 0);
+                  bmp.close();
+                  try { tmp.ctx.drawImage(bmp, 0, 0); } catch (_) {}
+                })
+                .catch(function () {});
+              promises.push(p);
+            }(i));
+          }
+          Promise.all(promises).catch(function () {});
+        }());
+
+        /* â”€â”€ Variante E: drawImage de canvas para si mesmo â”€â”€ */
+        (function variantE() {
+          try {
+            var r   = makeCanvas(64, 64, '#0000ff');
+            var ctx = r.ctx;
+            ctx.drawImage(r.canvas, 0, 0);
+            ctx.drawImage(r.canvas, 32, 32, 32, 32, 0, 0, 32, 32);
+
+            var pixel = ctx.getImageData(16, 16, 1, 1);
+            if (pixel.data[0] === 0 && pixel.data[1] === 0 && pixel.data[2] === 0 && pixel.data[3] === 255) {
+              anomalies.push('E: canvas ficou preto apÃ³s self-copy');
+            }
+          } catch (e) {
+            anomalies.push('E: ' + String(e));
+          }
+        }());
+
+        /* â”€â”€ Variante H: padrÃ£o controlado em nÃ£o-overlap (SANITY) â”€â”€
+         * Verificar se o padrÃ£o Ã© realmente escrito pelo putImageData
+         * e nÃ£o Ã© lixo de memÃ³ria preexistente.
          */
         (function variantH() {
           try {
             var r   = makeCanvas(8, 8, null);
             var ctx = r.ctx;
 
-            /* Padrão reconhecível: R=0x42, G=0x43, B=0x44, A=0xFF */
+            /* PadrÃ£o reconhecÃ­vel */
             var large = ctx.createImageData(32, 32);
             for (var i = 0; i < large.data.length; i += 4) {
               large.data[i]     = 0x42;
@@ -166,49 +177,87 @@
 
             ctx.putImageData(large, -12, -12);
 
-            /* Verificar região que DEVE estar limpa (0,0 a 3,3) */
-            var check = ctx.getImageData(0, 0, 4, 4);
-            var patternMatches = 0;
+            var check = ctx.getImageData(0, 0, 8, 8);
+            var unexpected = 0;
             for (var i = 0; i < check.data.length; i += 4) {
-              if (check.data[i] === 0x42 && check.data[i + 3] === 0xFF) {
-                patternMatches++;
+              if (check.data[i] === 0x42 && check.data[i + 1] === 0x43 &&
+                  check.data[i + 3] === 0xFF) {
+                unexpected++;
               }
             }
-
-            /* Se o padrão aparece na região não-overlap, é OOB write confirmado */
-            if (patternMatches > 0) {
-              anomalies.push('H: padrão 0x42/0x43/0x44/0xFF encontrado em região não-overlap (' +
-                patternMatches + ' pixels) — OOB WRITE CONFIRMADO');
+            if (unexpected > 0) {
+              anomalies.push('H: padrÃ£o 0x42/0x43/0x44/0xFF em regiÃ£o nÃ£o-overlap (' + unexpected + ' pixels)');
             }
           } catch (e) {
-            anomalies.push('H: exceção: ' + String(e));
+            anomalies.push('H: exceÃ§Ã£o: ' + String(e));
           }
         }());
 
-        /* -- Variante I: createImageData com valueOf/toString malicioso --
-         * Testa se o C++ cacheia width/height antes de avaliar os argumentos.
+        /* â”€â”€ Variante I: putImageData com offset positivo fora dos limites â”€â”€
+         * SANITY: Se offset positivo (alÃ©m do canvas) tambÃ©m escreve OOB,
+         * confirma que o clipping estÃ¡ quebrado em AMBOS os lados.
          */
         (function variantI() {
+          try {
+            var r   = makeCanvas(8, 8, null);
+            var ctx = r.ctx;
+
+            var data = ctx.createImageData(16, 16);
+            for (var i = 0; i < data.data.length; i += 4) {
+              data.data[i]     = 0xAA;
+              data.data[i + 1] = 0xBB;
+              data.data[i + 2] = 0xCC;
+              data.data[i + 3] = 0xFF;
+            }
+
+            /* Offset positivo â€” ImageData comeÃ§a FORA do canvas (8,8) */
+            ctx.putImageData(data, 8, 8);
+
+            var check = ctx.getImageData(0, 0, 8, 8);
+            var unexpected = 0;
+            for (var i = 0; i < check.data.length; i += 4) {
+              if (check.data[i] === 0xAA && check.data[i + 1] === 0xBB) {
+                unexpected++;
+              }
+            }
+            if (unexpected > 0) {
+              anomalies.push('I: OOB write com offset POSITIVO (' + unexpected + ' pixels)');
+            }
+          } catch (e) {
+            anomalies.push('I: exceÃ§Ã£o: ' + String(e));
+          }
+        }());
+
+        /* â”€â”€ Variante J: CONTROLE â€” putImageData com offset vÃ¡lido â”€â”€
+         * SANITY: Offset vÃ¡lido (dentro do canvas) deve NÃƒO escrever fora.
+         */
+        (function variantJ() {
           try {
             var r   = makeCanvas(16, 16, null);
             var ctx = r.ctx;
 
-            var w = {
-              valueOf: function () {
-                /* Durante a avaliação do width, corromper o canvas */
-                r.canvas.width = 1;
-                return 8;
-              }
-            };
+            var data = ctx.createImageData(8, 8);
+            for (var i = 0; i < data.data.length; i += 4) {
+              data.data[i]     = 0x99;
+              data.data[i + 1] = 0x88;
+              data.data[i + 2] = 0x77;
+              data.data[i + 3] = 0xFF;
+            }
 
-            var data = ctx.createImageData(w, 8);
-            /* Se o C++ usou width=8 mas o canvas foi corrompido para width=1,
-             * putImageData pode comportar-se mal */
-            if (data.width !== 8 && data.width !== 1) {
-              anomalies.push('I: width inesperado: ' + data.width);
+            /* Offset vÃ¡lido: (4,4) â€” ImageData 8x8 cabe dentro de 16x16 */
+            ctx.putImageData(data, 4, 4);
+
+            /* Verificar regiÃ£o que NÃƒO deveria ser afetada: (0,0) a (3,3) */
+            var check = ctx.getImageData(0, 0, 4, 4);
+            var unexpected = 0;
+            for (var i = 0; i < check.data.length; i += 4) {
+              if (check.data[i] === 0x99) unexpected++;
+            }
+            if (unexpected > 0) {
+              anomalies.push('J: OOB write mesmo com offset VÃLIDO (' + unexpected + ' pixels)');
             }
           } catch (e) {
-            anomalies.push('I: exceção: ' + String(e));
+            anomalies.push('J: exceÃ§Ã£o: ' + String(e));
           }
         }());
 
@@ -216,7 +265,7 @@
           if (anomalies.length > 0) {
             resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: 'PASS', detail: 'A-I sem anomalias' });
+            resolve({ status: 'PASS', detail: 'A-J sem anomalias' });
           }
         }, 1500);
       });
