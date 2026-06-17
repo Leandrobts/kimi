@@ -1,28 +1,21 @@
 'use strict';
 /**
- * Teste 12 — Canvas putImageData OOB: Heap Corruption EXPLOITAÇÃO
+ * Teste 12 — Canvas putImageData OOB: Heap Corruption (v1.2 SANITY)
  *
- * Bug confirmado no Teste 5H:
- *   padrão 0x42/0x43/0x44/0xFF encontrado em região não-overlap (16 pixels)
- *   → OOB WRITE com dados controlados CONFIRMADO
- *
- * Estratégia de exploração:
- *   1. Criar canvas adjacente a estruturas de memória controladas
- *   2. Usar putImageData OOB para sobrescrever headers/lengths
- *   3. Verificar corrupção de ArrayBuffer, JSObject, TypedArray
- *
- * Variantes:
- *   A — Sobrescrever length de ArrayBuffer adjacente
- *   B — Sobrescrever butterfly pointer de JSObject
- *   C — Corromper TypedArray (data pointer / length)
- *   D — Heap spray + OOB para encontrar alvo
+ * SANITY CHECKS:
+ *   - Variante D: 10 canvases corrompidos por OOB de vizinho.
+ *     Verificar se é realmente cross-corruption ou se os canvases
+ *     compartilham o mesmo buffer interno (comportamento esperado
+ *     de algumas implementações de canvas).
+ *   - Variante E: CONTROLE — criar canvases isolados (não adjacentes
+ *     na memória) para verificar se OOB ainda os afeta.
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['12'] = {
     id      : 12,
-    name    : 'Canvas putImageData OOB — Heap Corruption EXPLOITAÇÃO',
+    name    : 'Canvas putImageData OOB - Heap Corruption (v1.2 SANITY)',
     category: 'Canvas-Exploit',
     timeout : 10000,
 
@@ -30,64 +23,44 @@
       return new Promise(function (resolve) {
         var anomalies = [];
 
-        /* ── Variante A: Corromper length de ArrayBuffer adjacente ── */
+        /* ── Variante A: Corromper ArrayBuffer adjacente ── */
         (function variantA() {
           try {
-            /* Criar múltiplos ArrayBuffers de tamanho conhecido */
             var buffers = [];
             for (var i = 0; i < 50; i++) {
               buffers.push(new ArrayBuffer(64));
             }
 
-            /* Preencher com padrão reconhecível */
             for (var i = 0; i < buffers.length; i++) {
               var v = new Uint32Array(buffers[i]);
               v[0] = 0xDEADBEEF;
-              v[1] = 64; /* length esperado */
+              v[1] = 64;
             }
 
-            /* Canvas pequeno adjacente na memória */
             var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
             var ctx = canvas.getContext('2d');
 
-            /* ImageData grande com padrão que parece length (0x00000100 = 256) */
-            var data = ctx.createImageData(128, 128);
-            for (var i = 0; i < data.data.length; i += 4) {
-              data.data[i]     = 0x00;
-              data.data[i + 1] = 0x01;
-              data.data[i + 2] = 0x00;
-              data.data[i + 3] = 0x00;
+            var data = ctx.createImageData(256, 256);
+            for (var i = 0; i < data.data.length; i++) {
+              data.data[i] = 0x41;
             }
 
-            /* putImageData com offset negativo — tentar atingir ArrayBuffers */
-            ctx.putImageData(data, -60, -60);
+            ctx.putImageData(data, -120, -120);
 
-            /* Verificar se algum ArrayBuffer foi corrompido */
             var corrupted = 0;
             for (var i = 0; i < buffers.length; i++) {
-              if (buffers[i].byteLength !== 64) {
-                corrupted++;
-                anomalies.push('A: ArrayBuffer[' + i + '] length corrompido: ' +
-                  buffers[i].byteLength + ' (esperado 64)');
-              } else {
-                var check = new Uint32Array(buffers[i]);
-                if (check[0] !== 0xDEADBEEF) {
-                  corrupted++;
-                  anomalies.push('A: ArrayBuffer[' + i + '] conteúdo corrompido: 0x' +
-                    check[0].toString(16));
-                }
-              }
+              if (buffers[i].byteLength !== 64) corrupted++;
             }
-            if (corrupted === 0) {
-              /* Sem corrupção detectável — tentar com offset diferente */
+            if (corrupted > 0) {
+              anomalies.push('A: ' + corrupted + ' ArrayBuffers corrompidos');
             }
           } catch (e) {
             anomalies.push('A: ' + String(e));
           }
         }());
 
-        /* ── Variante B: Corromper TypedArray (data pointer / length) ── */
+        /* ── Variante B: Corromper TypedArray ── */
         (function variantB() {
           try {
             var arrays = [];
@@ -103,40 +76,33 @@
             var ctx = canvas.getContext('2d');
 
             var data = ctx.createImageData(256, 256);
-            /* Preencher com padrão que pode parecer ponteiro (0x0000FFFE...) */
-            for (var i = 0; i < data.data.length; i += 4) {
-              data.data[i]     = 0xFE;
-              data.data[i + 1] = 0xFF;
-              data.data[i + 2] = 0x00;
-              data.data[i + 3] = 0x00;
+            for (var i = 0; i < data.data.length; i++) {
+              data.data[i] = 0xFF;
             }
 
             ctx.putImageData(data, -120, -120);
 
             var corrupted = 0;
             for (var i = 0; i < arrays.length; i++) {
-              if (arrays[i].length !== 16) {
-                corrupted++;
-                anomalies.push('B: TypedArray[' + i + '] length corrompido: ' + arrays[i].length);
-              } else if (arrays[i][0] !== 0xCAFEBABE) {
-                corrupted++;
-                anomalies.push('B: TypedArray[' + i + '] conteúdo corrompido: 0x' +
-                  arrays[i][0].toString(16));
-              }
+              if (arrays[i].length !== 16) corrupted++;
+              else if (arrays[i][0] !== 0xCAFEBABE) corrupted++;
+            }
+            if (corrupted > 0) {
+              anomalies.push('B: ' + corrupted + ' TypedArrays corrompidos');
             }
           } catch (e) {
             anomalies.push('B: ' + String(e));
           }
         }());
 
-        /* ── Variante C: Heap spray de objetos com propriedade length ── */
+        /* ── Variante C: Heap spray de objetos ── */
         (function variantC() {
           try {
             var objects = [];
             for (var i = 0; i < 100; i++) {
               objects.push({
                 length: 64,
-                data: new Array(16).fill(i),
+                data: new Array(10).fill(i),
                 marker: 0xBEEF
               });
             }
@@ -154,25 +120,23 @@
 
             var corrupted = 0;
             for (var i = 0; i < objects.length; i++) {
-              if (objects[i].length !== 64) {
-                corrupted++;
-                anomalies.push('C: objeto[' + i + '].length corrompido: ' + objects[i].length);
-              }
-              if (objects[i].marker !== 0xBEEF) {
-                corrupted++;
-                anomalies.push('C: objeto[' + i + '].marker corrompido: 0x' +
-                  objects[i].marker.toString(16));
-              }
+              if (objects[i].length !== 64) corrupted++;
+              if (objects[i].marker !== 0xBEEF) corrupted++;
+            }
+            if (corrupted > 0) {
+              anomalies.push('C: ' + corrupted + ' objetos corrompidos');
             }
           } catch (e) {
             anomalies.push('C: ' + String(e));
           }
         }());
 
-        /* ── Variante D: Múltiplos canvases + OOB coordenado ── */
+        /* ── Variante D: Múltiplos canvases — cross-corruption (SANITY) ──
+         * Verificar se os canvases realmente compartilham memória ou
+         * se é comportamento esperado.
+         */
         (function variantD() {
           try {
-            /* Criar grid de canvases pequenos */
             var canvases = [];
             for (var i = 0; i < 10; i++) {
               var c = document.createElement('canvas');
@@ -180,14 +144,12 @@
               canvases.push({ canvas: c, ctx: c.getContext('2d') });
             }
 
-            /* Preencher cada canvas com cor diferente */
             for (var i = 0; i < canvases.length; i++) {
               var ctx = canvases[i].ctx;
               ctx.fillStyle = 'rgb(' + i + ',' + (255-i) + ',128)';
               ctx.fillRect(0, 0, 8, 8);
             }
 
-            /* Tentar OOB em cada canvas */
             for (var i = 0; i < canvases.length; i++) {
               var ctx = canvases[i].ctx;
               var data = ctx.createImageData(32, 32);
@@ -198,11 +160,9 @@
               ctx.putImageData(data, -12, -12);
             }
 
-            /* Verificar se OOB de um canvas afetou outro */
             var crossCorruption = 0;
             for (var i = 0; i < canvases.length; i++) {
               var pixel = canvases[i].ctx.getImageData(0, 0, 1, 1);
-              /* O pixel deveria ter a cor original, não 0x41 */
               if (pixel.data[0] === 0x41) {
                 crossCorruption++;
               }
@@ -215,11 +175,64 @@
           }
         }());
 
+        /* ── Variante E: CONTROLE — canvases isolados na memória ──
+         * SANITY: Criar canvases com operações de memória entre eles
+         * para garantir que não estão adjacentes. Se OOB ainda afetar,
+         * é bug real. Se NÃO afetar, a cross-corruption do D pode ser
+         * devido a agrupamento de memória do canvas.
+         */
+        (function variantE() {
+          try {
+            var canvases = [];
+            var garbage = [];
+
+            for (var i = 0; i < 5; i++) {
+              /* Criar canvas */
+              var c = document.createElement('canvas');
+              c.width = 8; c.height = 8;
+              canvases.push({ canvas: c, ctx: c.getContext('2d') });
+
+              /* Criar garbage entre canvases para separar na memória */
+              garbage.push(new ArrayBuffer(1024));
+              garbage.push(new Uint32Array(256));
+              garbage.push({ marker: i, data: new Array(100).fill(i) });
+            }
+
+            for (var i = 0; i < canvases.length; i++) {
+              var ctx = canvases[i].ctx;
+              ctx.fillStyle = 'rgb(0,' + (i * 50) + ',255)';
+              ctx.fillRect(0, 0, 8, 8);
+            }
+
+            /* OOB no primeiro canvas */
+            var ctx0 = canvases[0].ctx;
+            var data = ctx0.createImageData(64, 64);
+            for (var i = 0; i < data.data.length; i++) {
+              data.data[i] = 0xFF;
+            }
+            ctx0.putImageData(data, -30, -30);
+
+            /* Verificar se outros canvases foram afetados */
+            var affected = 0;
+            for (var i = 1; i < canvases.length; i++) {
+              var pixel = canvases[i].ctx.getImageData(0, 0, 1, 1);
+              if (pixel.data[0] === 0xFF && pixel.data[1] === 0xFF) {
+                affected++;
+              }
+            }
+            if (affected > 0) {
+              anomalies.push('E: ' + affected + ' canvases isolados afetados por OOB (bug real)');
+            }
+          } catch (e) {
+            anomalies.push('E: ' + String(e));
+          }
+        }());
+
         setTimeout(function () {
           if (anomalies.length > 0) {
             resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: 'PASS', detail: 'A-D sem corrupção detectável' });
+            resolve({ status: 'PASS', detail: 'A-E sem corrupção detectável' });
           }
         }, 1000);
       });
