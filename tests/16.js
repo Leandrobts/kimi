@@ -1,24 +1,25 @@
 'use strict';
 /**
- * Teste 16 — DOM MutationObserver: Investigação Profunda
+ * Teste 16 — DOM MutationObserver: Investigação Profunda (v1.2)
  *
- * Bug no Teste 4B:
- *   childNodes=50 após flush de microtasks (removedCount=0)
- *   → O callback do MutationObserver NUNCA foi chamado
- *
- * Hipóteses:
- *   H1: disconnect() cancela callbacks pendentes (comportamento correto)
- *   H2: O observer nunca disparou (batching de mutações)
- *   H3: Bug no WebKit — callbacks perdidos
- *
- * Este teste diferencia entre H1, H2, H3.
+ * CORREÇÃO v1.2:
+ *   - Variante A: callbackCount=100, childNodes=0 é COMPORTAMENTO ESPERADO
+ *     quando NÃO desconectamos o observer. O callback é chamado para
+ *     CADA mutação (50 append + 50 remove = 100 callbacks).
+ *   - Variante B: takeRecords()=50, childNodes=50 é COMPORTAMENTO ESPERADO.
+ *     takeRecords() COLETA records mas NÃO EXECUTA callbacks.
+ *     disconnect() impede futuros callbacks. Portanto, childNodes=50
+ *     é correto — os nós nunca foram removidos.
+ *   - Adicionada Variante C: verificar se disconnect() realmente
+ *     impede callbacks futuros.
+ *   - Adicionada Variante D: verificar se reconnect funciona.
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['16'] = {
     id      : 16,
-    name    : 'DOM MutationObserver — Investigação Profunda (childNodes=50)',
+    name    : 'DOM MutationObserver - Investigação Profunda (v1.2)',
     category: 'DOM-Investigation',
     timeout : 8000,
 
@@ -26,19 +27,27 @@
       return new Promise(function (resolve) {
         var anomalies = [];
 
-        /* ── Variante A: Observer SEM disconnect — verificar se callback roda ── */
+        /* ── Variante A: Observer SEM disconnect (comportamento esperado) ──
+         * CORREÇÃO v1.2: NÃO reportar como anomalia. O callback é chamado
+         * para cada mutação — 50 append + 50 remove = 100 callbacks.
+         * childNodes=0 é esperado pois o callback remove todos os nós.
+         */
         (function variantA() {
-          try {
+          return new Promise(function (res) {
             var div = document.createElement('div');
             document.body.appendChild(div);
-
             var callbackCount = 0;
+            var removedCount  = 0;
+
             var obs = new MutationObserver(function (mutations) {
-              callbackCount += mutations.length;
+              callbackCount++;
               mutations.forEach(function (m) {
                 m.addedNodes.forEach(function (node) {
                   if (node.parentNode) {
-                    try { node.parentNode.removeChild(node); } catch (_) {}
+                    try {
+                      node.parentNode.removeChild(node);
+                      removedCount++;
+                    } catch (_) {}
                   }
                 });
               });
@@ -50,28 +59,37 @@
               div.appendChild(document.createElement('p'));
             }
 
-            /* NÃO chamar disconnect() — deixar callback rodar */
             setTimeout(function () {
+              /* NÃO reportar como anomalia — comportamento esperado.
+               * Apenas verificar se está consistente. */
               if (callbackCount === 0) {
-                anomalies.push('A: MutationObserver callback NUNCA disparou (50 appendChild)');
-              } else {
-                anomalies.push('A: callbackCount=' + callbackCount + ', childNodes=' + div.childNodes.length);
+                anomalies.push('A: CRÍTICO — callback NUNCA disparou (sem disconnect)');
+              } else if (div.childNodes.length > 0) {
+                /* Se callback disparou mas não removeu todos, pode haver bug */
+                anomalies.push('A: callback disparou ' + callbackCount + 'x mas childNodes=' + div.childNodes.length);
               }
               obs.disconnect();
               if (div.parentNode) div.parentNode.removeChild(div);
-            }, 500);
-          } catch (e) {
-            anomalies.push('A: ' + String(e));
-          }
-        }());
+              res();
+            }, 1000);
+          });
+        }()).then(function () {
+          /* Continuar após Variante A */
+        });
 
-        /* ── Variante B: Observer com takeRecords() antes de disconnect ── */
+        /* ── Variante B: Observer COM takeRecords + disconnect (comportamento esperado) ──
+         * CORREÇÃO v1.2: NÃO reportar como anomalia. takeRecords() retorna
+         * records pendentes mas NÃO executa callbacks. disconnect() impede
+         * futuros callbacks. Portanto, childNodes=50 é correto.
+         */
         (function variantB() {
-          try {
+          return new Promise(function (res) {
             var div = document.createElement('div');
             document.body.appendChild(div);
+            var callbackCount = 0;
 
             var obs = new MutationObserver(function (mutations) {
+              callbackCount++;
               mutations.forEach(function (m) {
                 m.addedNodes.forEach(function (node) {
                   if (node.parentNode) {
@@ -87,90 +105,99 @@
               div.appendChild(document.createElement('p'));
             }
 
-            /* takeRecords() antes de disconnect */
             var records = obs.takeRecords();
             obs.disconnect();
 
-            if (records.length === 0) {
-              anomalies.push('B: takeRecords() retornou vazio (50 mutações perdidas?)');
-            } else {
-              anomalies.push('B: takeRecords()=' + records.length + ', childNodes=' + div.childNodes.length);
+            setTimeout(function () {
+              /* NÃO reportar como anomalia — comportamento esperado.
+               * Apenas verificar se callback não foi chamado (esperado). */
+              if (callbackCount > 0) {
+                anomalies.push('B: callback disparou após takeRecords()+disconnect() (count=' + callbackCount + ')');
+              }
+              if (records.length !== 50) {
+                anomalies.push('B: takeRecords() retornou ' + records.length + ' (esperado 50)');
+              }
+              if (div.parentNode) div.parentNode.removeChild(div);
+              res();
+            }, 500);
+          });
+        }()).then(function () {
+          /* Continuar após Variante B */
+        });
+
+        /* ── Variante C: disconnect() impede callbacks futuros? ──
+         * NOVO v1.2: verificar se disconnect() realmente para o observer.
+         */
+        (function variantC() {
+          return new Promise(function (res) {
+            var div = document.createElement('div');
+            document.body.appendChild(div);
+            var callbackCount = 0;
+
+            var obs = new MutationObserver(function () {
+              callbackCount++;
+            });
+
+            obs.observe(div, { childList: true });
+            obs.disconnect();
+
+            /* Adicionar nós APÓS disconnect */
+            for (var i = 0; i < 10; i++) {
+              div.appendChild(document.createElement('span'));
             }
 
-            if (div.parentNode) div.parentNode.removeChild(div);
-          } catch (e) {
-            anomalies.push('B: ' + String(e));
-          }
-        }());
-
-        /* ── Variante C: Observer síncrono (sem batching) ── */
-        (function variantC() {
-          try {
-            var div = document.createElement('div');
-            document.body.appendChild(div);
-
-            var obs = new MutationObserver(function (mutations) {
-              /* Callback síncrono — não deve haver batching */
-            });
-
-            obs.observe(div, { childList: true, subtree: true });
-
-            /* appendChild síncrono — deve disparar imediatamente? */
-            var p = document.createElement('p');
-            div.appendChild(p);
-
-            /* Em microtask, o callback já deveria ter rodado */
-            Promise.resolve().then(function () {
-              if (div.childNodes.length !== 0) {
-                /* Se o callback não removeu, pode ser batching ou bug */
+            setTimeout(function () {
+              if (callbackCount > 0) {
+                anomalies.push('C: callback disparou APÓS disconnect() (count=' + callbackCount + ')');
               }
-              obs.disconnect();
               if (div.parentNode) div.parentNode.removeChild(div);
-            });
-          } catch (e) {
-            anomalies.push('C: ' + String(e));
-          }
-        }());
+              res();
+            }, 500);
+          });
+        }()).then(function () {
+          /* Continuar após Variante C */
+        });
 
-        /* ── Variante D: Múltiplos observers no mesmo alvo ── */
+        /* ── Variante D: reconnect após disconnect ──
+         * NOVO v1.2: verificar se reconnect funciona corretamente.
+         */
         (function variantD() {
-          try {
+          return new Promise(function (res) {
             var div = document.createElement('div');
             document.body.appendChild(div);
+            var callbackCount = 0;
 
-            var count1 = 0, count2 = 0;
-            var obs1 = new MutationObserver(function () { count1++; });
-            var obs2 = new MutationObserver(function () { count2++; });
+            var obs = new MutationObserver(function () {
+              callbackCount++;
+            });
 
-            obs1.observe(div, { childList: true });
-            obs2.observe(div, { childList: true });
+            obs.observe(div, { childList: true });
+            obs.disconnect();
+            obs.observe(div, { childList: true });
 
             for (var i = 0; i < 10; i++) {
               div.appendChild(document.createElement('span'));
             }
 
             setTimeout(function () {
-              if (count1 === 0 && count2 === 0) {
-                anomalies.push('D: NENHUM observer disparou (10 appendChild)');
-              } else if (count1 === 0 || count2 === 0) {
-                anomalies.push('D: Apenas um observer disparou (count1=' + count1 + ', count2=' + count2 + ')');
+              if (callbackCount === 0) {
+                anomalies.push('D: callback NÃO disparou após reconnect');
               }
-              obs1.disconnect();
-              obs2.disconnect();
               if (div.parentNode) div.parentNode.removeChild(div);
+              res();
             }, 500);
-          } catch (e) {
-            anomalies.push('D: ' + String(e));
-          }
-        }());
+          });
+        }()).then(function () {
+          /* Continuar após Variante D */
+        });
 
         setTimeout(function () {
           if (anomalies.length > 0) {
             resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
           } else {
-            resolve({ status: 'PASS', detail: 'A-D sem anomalias' });
+            resolve({ status: 'PASS', detail: 'A-D comportamento esperado confirmado' });
           }
-        }, 1500);
+        }, 2000);
       });
     }
   };
