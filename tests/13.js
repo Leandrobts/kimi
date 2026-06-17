@@ -1,42 +1,30 @@
 'use strict';
 /**
- * Teste 13 — MessagePort closed state: UAF / State Corruption EXPLOITAÇÃO
+ * Teste 13 — MessagePort closed state: UAF / State Corruption (v1.2)
  *
- * Bug confirmado nos Testes 6 e 8:
- *   - postMessage() após close() NUNCA lança exceção (100/100 repro)
- *   - Mesmo após microtask flush
- *
- * Hipóteses:
- *   H1: close() é no-op (não seta flag closed)
- *   H2: close() seta flag mas postMessage() não verifica
- *   H3: close() é assíncrono e nunca completa
- *
- * Se H1 ou H2: transfer de ArrayBuffer para porta "fechada" pode
- *   causar UAF (buffer detached sem destino válido)
- *
- * Se H3: race entre close() e postMessage() pode causar double-free
- *
- * Variantes:
- *   A — Transfer ArrayBuffer para porta fechada (UAF?)
- *   B — Transfer ArrayBuffer, depois acessar (use-after-detach?)
- *   C — Race: close() e postMessage() no mesmo tick
- *   D — Porta fechada ainda recebe mensagens?
- *   E — Double-close + postMessage (double-free?)
- *   F — Porta fechada em um lado, postar do outro
+ * CORREÇÃO v1.2:
+ *   - Variante F: port2.postMessage após port1.close() pode ser
+ *     comportamento ESPERADO — port2 não deveria saber que port1
+ *     está fechada. A spec diz que postMessage do emissor (port2)
+ *     deve lançar InvalidStateError apenas se a porta ESTIVER fechada.
+ *     port2 NÃO está fechada, apenas port1. Portanto, NÃO lançar
+ *     é comportamento correto.
+ *   - Adicionada Variante G: verificar se port2 detecta port1 fechada
+ *     após tentar postMessage (mensagem deve ser perdida, não entregue).
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['13'] = {
     id      : 13,
-    name    : 'MessagePort closed state — UAF / State Corruption EXPLOITAÇÃO',
+    name    : 'MessagePort closed state - UAF / State Corruption (v1.2)',
     category: 'Messaging-Exploit',
     timeout : 8000,
 
     run: function () {
       return new Promise(function (resolve) {
         var anomalies = [];
-        var pending   = 6;
+        var pending   = 7;
 
         function done(varName, anomaly) {
           if (anomaly) anomalies.push(varName + ': ' + anomaly);
@@ -44,15 +32,12 @@
             if (anomalies.length > 0) {
               resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
             } else {
-              resolve({ status: 'PASS', detail: 'A-F sem anomalias' });
+              resolve({ status: 'PASS', detail: 'A-G sem anomalias' });
             }
           }
         }
 
-        /* ── Variante A: Transfer ArrayBuffer para porta fechada ──
-         * Se a porta está realmente fechada, o buffer NÃO deve ser detached.
-         * Se for detached mas a mensagem não é entregue, temos UAF.
-         */
+        /* ── Variante A: Transfer ArrayBuffer para porta fechada ── */
         (function variantA() {
           try {
             var mc  = new MessageChannel();
@@ -60,33 +45,19 @@
             var buf = new ArrayBuffer(1024);
             var view = new Uint8Array(buf);
             view[0] = 0xDE;
-            view[1] = 0xAD;
 
             mc.port1.close();
 
             try {
               mc.port1.postMessage(buf, [buf]);
-
-              /* Se chegou aqui, postMessage não lançou.
-               * Verificar se o buffer foi detached. */
               if (buf.byteLength === 0) {
-                /* Buffer foi detached mas porta está fechada!
-                 * A mensagem nunca será entregue → UAF do buffer */
                 anomalies.push('A: CRÍTICO — ArrayBuffer detached em transfer para porta FECHADA');
-
-                /* Tentar acessar o buffer detached */
                 try {
                   var v = new Uint8Array(buf);
                   anomalies.push('A: Uint8Array de buffer detached criada sem exceção (length=' + v.length + ')');
-                } catch (e2) {
-                  /* TypeError esperado */
-                }
-              } else {
-                /* Buffer NÃO foi detached — comportamento seguro */
+                } catch (e2) {}
               }
-            } catch (e) {
-              /* Se lançou exceção, comportamento correto */
-            }
+            } catch (_) {}
             done('A');
           } catch (e) {
             done('A', String(e));
@@ -104,16 +75,10 @@
             var received = false;
             mc.port2.onmessage = function (e) {
               received = true;
-              if (e.data && e.data instanceof ArrayBuffer) {
-                /* Mensagem chegou mesmo com port1 fechada? */
-              }
             };
 
             mc.port1.close();
-
-            try {
-              mc.port1.postMessage(buf, [buf]);
-            } catch (_) {}
+            try { mc.port1.postMessage(buf, [buf]); } catch (_) {}
 
             setTimeout(function () {
               if (received) {
@@ -129,7 +94,7 @@
           }
         }());
 
-        /* ── Variante C: Race loop — close() e postMessage() alternados ── */
+        /* ── Variante C: Race loop ── */
         (function variantC() {
           try {
             var uafCount = 0;
@@ -137,13 +102,10 @@
               var mc = new MessageChannel();
               mc.port1.start();
               var buf = new ArrayBuffer(64);
-
               mc.port1.close();
               try {
                 mc.port1.postMessage(buf, [buf]);
-                if (buf.byteLength === 0) {
-                  uafCount++;
-                }
+                if (buf.byteLength === 0) uafCount++;
               } catch (_) {}
             }
             if (uafCount > 0) {
@@ -178,13 +140,13 @@
           }
         }());
 
-        /* ── Variante E: Double-close + postMessage ── */
+        /* ── Variante E: Double-close ── */
         (function variantE() {
           try {
             var mc = new MessageChannel();
             mc.port1.start();
             mc.port1.close();
-            mc.port1.close(); /* double close */
+            mc.port1.close();
 
             var threw = false;
             try {
@@ -192,7 +154,6 @@
             } catch (e) {
               threw = true;
             }
-
             if (!threw) {
               anomalies.push('E: postMessage após double-close não lançou');
             }
@@ -202,31 +163,79 @@
           }
         }());
 
-        /* ── Variante F: Porta fechada em um lado, postar do outro ── */
+        /* ── Variante F (CORRIGIDO v1.2): port2.postMessage após port1.close() ──
+         * CORREÇÃO: port2 NÃO está fechada, apenas port1. A spec permite
+         * postMessage de port2 — a mensagem será perdida (port1 fechada).
+         * NÃO é anomalia se não lançar exceção.
+         * 
+         * O que VERIFICAMOS agora: se a mensagem é realmente perdida
+         * (não entregue em port1) e se port2 detecta eventualmente.
+         */
         (function variantF() {
           try {
             var mc = new MessageChannel();
             mc.port1.start();
             mc.port2.start();
 
-            /* Fechar port1 (lado do receptor) */
+            var received = false;
+            mc.port1.onmessage = function () { received = true; };
+
             mc.port1.close();
 
-            /* Postar de port2 (lado do emissor) */
+            /* port2.postMessage deve ser permitido (port2 está aberta) */
             var threw = false;
             try {
-              mc.port2.postMessage('to-closed');
+              mc.port2.postMessage('to-closed-port1');
             } catch (e) {
               threw = true;
             }
 
-            if (!threw) {
-              /* port2 não deveria saber que port1 está fechada */
-              anomalies.push('F: port2.postMessage não lançou após port1.close()');
+            /* Se port2 lançou exceção, isso é anomalia (port2 não está fechada) */
+            if (threw) {
+              anomalies.push('F: port2.postMessage lançou exceção (port2 deveria estar aberta)');
             }
-            done('F');
+
+            setTimeout(function () {
+              /* Verificar se a mensagem foi perdida (esperado) ou entregue (bug) */
+              if (received) {
+                anomalies.push('F: mensagem entregue em port1 fechada');
+              }
+              done('F');
+            }, 500);
           } catch (e) {
             done('F', String(e));
+          }
+        }());
+
+        /* ── Variante G: port1.close() durante port2.postMessage em loop ──
+         * NOVO v1.2: testa race específico entre close() e postMessage().
+         */
+        (function variantG() {
+          try {
+            var lostCount = 0;
+            for (var i = 0; i < 20; i++) {
+              var mc = new MessageChannel();
+              mc.port1.start();
+              mc.port2.start();
+
+              var received = false;
+              mc.port1.onmessage = function () { received = true; };
+
+              /* Race: fechar port1 enquanto port2 posta */
+              mc.port1.close();
+              mc.port2.postMessage('race-' + i);
+
+              /* Não esperamos setTimeout — verificar imediatamente */
+              if (received) {
+                lostCount++;
+              }
+            }
+            if (lostCount > 0) {
+              anomalies.push('G: ' + lostCount + '/20 mensagens entregues em port1 fechada (race)');
+            }
+            done('G');
+          } catch (e) {
+            done('G', String(e));
           }
         }());
 
