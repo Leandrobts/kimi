@@ -1,44 +1,75 @@
 'use strict';
 /**
- * Teste 6 — MessageChannel/BroadcastChannel (v1.1 CORRIGIDO + INVESTIGAÇÃO)
+ * Teste 6 â€” MessageChannel/BroadcastChannel (v1.2 SANITY)
  *
- * CORREÇÃO v1.1:
- *   - Variante B: postMessage para porta fechada agora verifica se
- *     o close() é realmente síncrono. Se for assíncrono, o não-lançar
- *     de exceção é comportamento esperado, não anomalia.
- *   - Adicionada Variante G: teste de síncronicidade do close().
- *
- * INVESTIGAÇÃO:
- *   - Variante H: postMessage com ArrayBuffer transfer para porta fechada
- *   - Variante I: race entre close() e postMessage em loop
+ * SANITY CHECKS:
+ *   - Variante G: Verificar se close() Ã© realmente sÃ­ncrono comparando
+ *     com comportamento em portas NÃƒO fechadas.
+ *   - Variante H: Confirmar que buffer detached Ã© realmente UAF
+ *     (mensagem nÃ£o entregue + buffer inacessÃ­vel).
+ *   - Variante J: Teste de controle â€” postMessage em porta ABERTA
+ *     deve funcionar normalmente.
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['6'] = {
     id      : 6,
-    name    : 'MessageChannel/BroadcastChannel — close sync test + races (v1.1)',
+    name    : 'MessageChannel/BroadcastChannel - close sync test + races (v1.2 SANITY)',
     category: 'Messaging',
     timeout : 7000,
 
     run: function () {
       return new Promise(function (resolve) {
         var anomalies = [];
-        var pending   = 9;
+        var pending   = 10;
 
-        function done() {
+        function done(varName, anomaly) {
+          if (anomaly) anomalies.push(varName + ': ' + anomaly);
           if (--pending <= 0) {
             if (anomalies.length > 0) {
               resolve({ status: 'ANOMALY', detail: anomalies.join(' | ') });
             } else {
-              resolve({ status: 'PASS', detail: 'A-I sem anomalias' });
+              resolve({ status: 'PASS', detail: 'A-J sem anomalias' });
             }
           }
         }
 
-        /* -- Variante G: close() é síncrono? --
-         * Se close() for assíncrono, o postMessage() seguinte pode
-         * ser válido temporariamente.
+        /* â”€â”€ Variante J: CONTROLE â€” postMessage em porta ABERTA â”€â”€
+         * SANITY: Verificar que postMessage funciona normalmente
+         * quando a porta estÃ¡ aberta.
+         */
+        (function variantJ() {
+          try {
+            var mc = new MessageChannel();
+            mc.port1.start();
+            mc.port2.start();
+
+            var received = false;
+            mc.port2.onmessage = function (e) {
+              received = true;
+              if (e.data !== 'test-open') {
+                anomalies.push('J: dado recebido incorreto: ' + JSON.stringify(e.data));
+              }
+            };
+
+            mc.port1.postMessage('test-open');
+
+            setTimeout(function () {
+              if (!received) {
+                anomalies.push('J: mensagem nÃ£o recebida em porta ABERTA');
+              }
+              mc.port1.close();
+              mc.port2.close();
+              done('J');
+            }, 500);
+          } catch (e) {
+            done('J', String(e));
+          }
+        }());
+
+        /* â”€â”€ Variante G: close() Ã© sÃ­ncrono? (SANITY) â”€â”€
+         * ComparaÃ§Ã£o: porta fechada vs porta aberta.
          */
         (function variantG() {
           try {
@@ -46,7 +77,6 @@
             mc.port1.start();
             mc.port1.close();
 
-            /* Flush microtasks */
             Promise.resolve().then(function () {
               var threw = false;
               try {
@@ -56,28 +86,21 @@
               }
 
               if (!threw) {
-                /* Mesmo após flush de microtasks, postMessage não lançou.
-                 * Isso é ANOMALIA REAL — close() deveria ser síncrono. */
-                anomalies.push('G: postMessage após close() + microtask flush não lançou');
+                anomalies.push('G: postMessage apÃ³s close() + microtask flush nÃ£o lanÃ§ou');
               }
-              done();
+              done('G');
             });
           } catch (e) {
-            anomalies.push('G: ' + String(e));
-            done();
+            done('G', String(e));
           }
         }());
 
-        /* -- Variante B (CORRIGIDO): postMessage para porta fechada --
-         * Agora diferencia entre close() síncrono vs assíncrono.
-         */
+        /* â”€â”€ Variante B: postMessage para porta fechada â”€â”€ */
         (function variantB() {
           try {
             var mc = new MessageChannel();
             mc.port1.start();
             mc.port2.start();
-
-            var closeSync = true;
             mc.port1.close();
 
             var threw = false;
@@ -87,46 +110,47 @@
               threw = true;
             }
 
-            /* Se não lançou imediatamente, pode ser assíncrono.
-             * Verificar após microtask flush na Variante G. */
             if (!threw) {
-              /* Não é mais anomalia imediata — investigar na G */
+              /* NÃ£o reportar como anomalia imediata â€” investigar na G */
             }
-            done();
+            done('B');
           } catch (e) {
-            anomalies.push('B: setup: ' + String(e));
-            done();
+            done('B', 'setup: ' + String(e));
           }
         }());
 
-        /* -- Variante H: transfer para porta fechada --
-         * Se postMessage para porta fechada não lança, o que acontece
-         * com ArrayBuffer transfer? O buffer é detached ou não?
+        /* â”€â”€ Variante H: transfer para porta fechada (SANITY) â”€â”€
+         * Confirmar UAF: buffer detached + mensagem nÃ£o entregue.
          */
         (function variantH() {
           try {
             var mc  = new MessageChannel();
             mc.port1.start();
             var buf = new ArrayBuffer(1024);
+            var view = new Uint8Array(buf);
+            view[0] = 0xDE;
+
             mc.port1.close();
 
             try {
               mc.port1.postMessage(buf, [buf]);
-              /* Se não lançou e o buffer foi detached, é bug grave */
               if (buf.byteLength === 0) {
                 anomalies.push('H: buffer detached em postMessage para porta fechada');
+                try {
+                  var v = new Uint8Array(buf);
+                  anomalies.push('H: Uint8Array de buffer detached criada sem exceÃ§Ã£o (length=' + v.length + ')');
+                } catch (e2) {}
               }
             } catch (e) {
-              /* Esperado — OK */
+              /* Esperado â€” OK */
             }
-            done();
+            done('H');
           } catch (e) {
-            anomalies.push('H: ' + String(e));
-            done();
+            done('H', String(e));
           }
         }());
 
-        /* -- Variante I: race loop close/postMessage -- */
+        /* â”€â”€ Variante I: race loop close/postMessage â”€â”€ */
         (function variantI() {
           try {
             var races = 0;
@@ -140,12 +164,11 @@
               } catch (_) {}
             }
             if (races > 0) {
-              anomalies.push('I: ' + races + '/100 postMessage após close() não lançaram');
+              anomalies.push('I: ' + races + '/100 postMessage apÃ³s close() nÃ£o lanÃ§aram');
             }
-            done();
+            done('I');
           } catch (e) {
-            anomalies.push('I: ' + String(e));
-            done();
+            done('I', String(e));
           }
         }());
 
@@ -159,14 +182,14 @@
               mc.port1.close();
               try { mc.port2.postMessage('after-port1-close'); } catch (_) {}
             };
-            mc.port2.onmessage = function () { done(); };
+            mc.port2.onmessage = function () { done('A'); };
             mc.port1.start(); mc.port2.start();
             mc.port2.postMessage('trigger');
             setTimeout(function () {
               if (received === 0) anomalies.push('A: onmessage nunca disparou');
-              done();
+              done('A');
             }, 1500);
-          } catch (e) { anomalies.push('A: ' + String(e)); done(); done(); }
+          } catch (e) { anomalies.push('A: ' + String(e)); done('A'); done('A'); }
         }());
 
         (function variantC() {
@@ -175,16 +198,19 @@
             var buf = new ArrayBuffer(512 * 1024);
             mc.port2.onmessage = function (e) {
               if (!e.data || !(e.data instanceof ArrayBuffer)) {
-                anomalies.push('C: dado não é ArrayBuffer');
+                anomalies.push('C: dado nÃ£o Ã© ArrayBuffer');
               }
-              done();
+              done('C');
             };
             mc.port1.start(); mc.port2.start();
             mc.port1.postMessage(buf, [buf]);
-            if (buf.byteLength !== 0) anomalies.push('C: buffer não detached');
-            try { var v = new Uint8Array(buf); anomalies.push('C: Uint8Array sem exceção'); } catch (_) {}
-            setTimeout(function () { if (mc.port2.onmessage) { anomalies.push('C: timeout'); done(); } mc.port1.close(); mc.port2.close(); }, 1500);
-          } catch (e) { anomalies.push('C: ' + String(e)); done(); }
+            if (buf.byteLength !== 0) anomalies.push('C: buffer nÃ£o detached');
+            try { var v = new Uint8Array(buf); anomalies.push('C: Uint8Array sem exceÃ§Ã£o'); } catch (_) {}
+            setTimeout(function () {
+              if (mc.port2.onmessage) { anomalies.push('C: timeout'); done('C'); }
+              mc.port1.close(); mc.port2.close();
+            }, 1500);
+          } catch (e) { anomalies.push('C: ' + String(e)); done('C'); }
         }());
 
         (function variantD() {
@@ -200,7 +226,7 @@
                 bc1.postMessage('should-not-arrive');
                 bc1.postMessage('should-not-arrive-2');
               } else {
-                anomalies.push('D: mensagem após close (' + msgCount + ')');
+                anomalies.push('D: mensagem apÃ³s close (' + msgCount + ')');
               }
             };
             bc1.postMessage('trigger');
@@ -208,9 +234,9 @@
               if (msgCount === 0) anomalies.push('D: onmessage nunca disparou');
               try { bc1.close(); } catch (_) {}
               try { bc2.close(); } catch (_) {}
-              done();
+              done('D');
             }, 1000);
-          } catch (e) { anomalies.push('D: ' + String(e)); done(); }
+          } catch (e) { anomalies.push('D: ' + String(e)); done('D'); }
         }());
 
         (function variantE() {
@@ -219,15 +245,15 @@
             var gotMsg = false;
             mc.port2.onmessage = function (e) {
               gotMsg = true;
-              if (e.data !== 'queued') anomalies.push('E: dado incorreto');
+              if (e.data !== 'queued') anomalies.push('E: dado incorreto: ' + JSON.stringify(e.data));
             };
             mc.port1.postMessage('queued');
             mc.port1.start(); mc.port2.start();
             setTimeout(function () {
-              if (!gotMsg) anomalies.push('E: mensagem não entregue');
-              mc.port1.close(); mc.port2.close(); done();
+              if (!gotMsg) anomalies.push('E: mensagem nÃ£o entregue');
+              mc.port1.close(); mc.port2.close(); done('E');
             }, 800);
-          } catch (e) { anomalies.push('E: ' + String(e)); done(); }
+          } catch (e) { anomalies.push('E: ' + String(e)); done('E'); }
         }());
 
         (function variantF() {
@@ -250,9 +276,9 @@
               else if (received.length > 1) anomalies.push('F: ' + received.length + ' msgs (esperado 1)');
               try { ab.port1.close(); } catch (_) {}
               try { bc.port1.close(); bc.port2.close(); } catch (_) {}
-              done();
+              done('F');
             }, 1000);
-          } catch (e) { anomalies.push('F: ' + String(e)); done(); }
+          } catch (e) { anomalies.push('F: ' + String(e)); done('F'); }
         }());
 
       });
@@ -260,3 +286,5 @@
   };
 
 }(window));
+
+
