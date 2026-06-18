@@ -1,24 +1,20 @@
 'use strict';
 /**
- * Teste 15 — Chain Exploitation: Proxy + Canvas + MessageChannel (v1.2)
+ * Teste 15 — Chain Exploitation: Proxy + Canvas + MessageChannel (v1.3)
  *
- * CORREÇÃO v1.2:
- *   - Variante B: "UAF tentativa — buffer detached, Canvas OOB executado"
- *     é apenas informativo. O buffer detached é esperado após transfer
- *     para porta fechada. A anomalia REAL seria se o Canvas OOB
- *     corrompesse a memória liberada. Agora verificamos corrupção real.
- *   - Variante D: "full chain executado sem crash" é apenas informativo.
- *     Não é anomalia se o chain não crashar. Anomalia seria corrupção
- *     detectada ou comportamento inesperado.
- *   - Adicionada Variante E: verificar se ArrayBuffer corrompido por
- *     Proxy + Canvas OOB pode ser detectado.
+ * CORREÇÃO v1.3:
+ *   - Variante D: TypeError "undefined is not an object" era causado
+ *     por tentar chamar v[0].toString() quando v era undefined.
+ *     Adicionada verificação de existência antes de acessar propriedades.
+ *   - Variante B: "UAF tentativa" é apenas informativo. Não reportar
+ *     como anomalia a menos que haja corrupção real.
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['15'] = {
     id      : 15,
-    name    : 'Chain Exploitation - Proxy + Canvas + MessageChannel (v1.2)',
+    name    : 'Chain Exploitation - Proxy + Canvas + MessageChannel (v1.3)',
     category: 'Chain-Exploit',
     timeout : 10000,
 
@@ -70,10 +66,8 @@
           }
         }());
 
-        /* ── Variante B: MessageChannel transfer fechada + Canvas (CORRIGIDO v1.2) ──
-         * O buffer detached é ESPERADO (comportamento do bug). A anomalia
-         * REAL seria se o Canvas OOB corrompesse a memória liberada.
-         * Verificamos se há crash ou corrupção detectável.
+        /* ── Variante B: MessageChannel transfer fechada + Canvas ──
+         * Não reportar como anomalia a menos que haja corrupção real.
          */
         (function variantB() {
           try {
@@ -84,12 +78,10 @@
             view[0] = 0xDE;
 
             mc.port1.close();
-
             try {
               mc.port1.postMessage(buf, [buf]);
             } catch (_) {}
 
-            /* Se o buffer foi detached, tentar Canvas OOB na memória liberada */
             if (buf.byteLength === 0) {
               var canvas = document.createElement('canvas');
               canvas.width = 4; canvas.height = 4;
@@ -101,10 +93,8 @@
               }
               ctx.putImageData(data, -250, -250);
 
-              /* Tentar detectar se o Canvas OOB escreveu na memória antiga do buffer.
-               * Isso é difícil de detectar sem crash, então apenas registramos
-               * que o cenário foi executado. */
-              /* NÃO reportamos como anomalia a menos que haja crash/corrupção */
+              /* Não reportar "UAF tentativa" como anomalia */
+              /* Apenas verificar se houve crash (não detectável aqui) */
             }
           } catch (e) {
             anomalies.push('B: ' + String(e));
@@ -141,9 +131,8 @@
           }
         }());
 
-        /* ── Variante D: Full chain test (CORRIGIDO v1.2) ──
-         * Não reportar "executado sem crash" como anomalia.
-         * Apenas verificar se há corrupção detectável.
+        /* ── Variante D: Full chain test (CORRIGIDO v1.3) ──
+         * Verificar corrupção real, não chamar métodos em undefined.
          */
         (function variantD() {
           try {
@@ -177,38 +166,45 @@
             mc.port1.close();
             try { mc.port1.postMessage(buf, [buf]); } catch (_) {}
 
-            /* Verificar se houve corrupção real */
+            /* Verificar corrupção real com verificação de existência */
             var corrupted = false;
             if (buf.byteLength !== 256 && buf.byteLength !== 0) {
               corrupted = true;
               anomalies.push('D: ArrayBuffer length inesperado: ' + buf.byteLength);
             }
-            if (v[0] !== 0xBEEF && v[0] !== 0xFFFFFFFF) {
-              corrupted = true;
-              anomalies.push('D: ArrayBuffer conteúdo corrompido: 0x' + v[0].toString(16));
+
+            /* CORREÇÃO: verificar se buf ainda é válido antes de criar view */
+            if (buf.byteLength > 0) {
+              try {
+                var check = new Uint32Array(buf);
+                if (check[0] !== 0xBEEF && check[0] !== 0xFFFFFFFF) {
+                  corrupted = true;
+                  anomalies.push('D: ArrayBuffer conteúdo corrompido: 0x' + check[0].toString(16));
+                }
+              } catch (e2) {
+                anomalies.push('D: exceção ao acessar ArrayBuffer: ' + String(e2));
+              }
+            } else {
+              /* Buffer detached — verificar se é comportamento esperado */
+              /* Não reportar como anomalia se foi detached pelo postMessage */
             }
-            /* Se não houve corrupção, não é anomalia */
           } catch (e) {
             anomalies.push('D: ' + String(e));
           }
         }());
 
-        /* ── Variante E: Proxy corrompe ArrayBuffer length, verificar acesso ──
-         * NOVO v1.2: tentar acessar o ArrayBuffer após corromper o length
-         * para verificar se há crash ou comportamento inesperado.
-         */
+        /* ── Variante E: Proxy corrompe ArrayBuffer length ── */
         (function variantE() {
           try {
             var buf = new ArrayBuffer(64);
             var v = new Uint32Array(buf);
             v[0] = 0xCAFEBABE;
-            v[1] = 64; /* length */
+            v[1] = 64;
 
             var target = [1, 2, 3, 4, 5];
             var proxy = new Proxy(target, {
               set: function (t, prop, val, recv) {
                 if (prop === '4') {
-                  /* Tentar corromper o length do ArrayBuffer */
                   v[1] = 0xFFFFFFFF;
                 }
                 return Reflect.set(t, prop, val, recv);
@@ -216,7 +212,6 @@
             });
             proxy.forEach(function (v, i) { proxy[i] = v * 2; });
 
-            /* Tentar acessar o ArrayBuffer após possível corrupção */
             try {
               var check = new Uint32Array(buf);
               if (check[0] !== 0xCAFEBABE) {
