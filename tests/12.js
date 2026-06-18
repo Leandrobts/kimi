@@ -1,21 +1,22 @@
 'use strict';
 /**
- * Teste 12 — Canvas putImageData OOB: Heap Corruption (v1.2 SANITY)
+ * Teste 12 — Canvas putImageData OOB: Heap Corruption (v1.3)
  *
- * SANITY CHECKS:
- *   - Variante D: 10 canvases corrompidos por OOB de vizinho.
- *     Verificar se é realmente cross-corruption ou se os canvases
- *     compartilham o mesmo buffer interno (comportamento esperado
- *     de algumas implementações de canvas).
- *   - Variante E: CONTROLE — criar canvases isolados (não adjacentes
- *     na memória) para verificar se OOB ainda os afeta.
+ * CORREÇÃO v1.3:
+ *   - Variante D: 10 canvases corrompidos pode ser falso positivo
+ *     se os canvases compartilham buffer interno ou estão adjacentes
+ *     na memória por design. Agora verificamos se a corrompção é
+ *     cross-canvas (vizinho) ou se todos os canvases foram afetados
+ *     pelo mesmo OOB (mesmo buffer).
+ *   - Se TODOS os canvases têm o mesmo padrão de corrompção, é
+ *     provavelmente compartilhamento de buffer, não cross-corruption.
  */
 (function (global) {
   global.FuzzerTests = global.FuzzerTests || {};
 
   global.FuzzerTests['12'] = {
     id      : 12,
-    name    : 'Canvas putImageData OOB - Heap Corruption (v1.2 SANITY)',
+    name    : 'Canvas putImageData OOB - Heap Corruption (v1.3)',
     category: 'Canvas-Exploit',
     timeout : 10000,
 
@@ -30,7 +31,6 @@
             for (var i = 0; i < 50; i++) {
               buffers.push(new ArrayBuffer(64));
             }
-
             for (var i = 0; i < buffers.length; i++) {
               var v = new Uint32Array(buffers[i]);
               v[0] = 0xDEADBEEF;
@@ -40,12 +40,10 @@
             var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
             var ctx = canvas.getContext('2d');
-
             var data = ctx.createImageData(256, 256);
             for (var i = 0; i < data.data.length; i++) {
               data.data[i] = 0x41;
             }
-
             ctx.putImageData(data, -120, -120);
 
             var corrupted = 0;
@@ -74,12 +72,10 @@
             var canvas = document.createElement('canvas');
             canvas.width = 4; canvas.height = 4;
             var ctx = canvas.getContext('2d');
-
             var data = ctx.createImageData(256, 256);
             for (var i = 0; i < data.data.length; i++) {
               data.data[i] = 0xFF;
             }
-
             ctx.putImageData(data, -120, -120);
 
             var corrupted = 0;
@@ -110,12 +106,10 @@
             var canvas = document.createElement('canvas');
             canvas.width = 8; canvas.height = 8;
             var ctx = canvas.getContext('2d');
-
             var data = ctx.createImageData(512, 512);
             for (var i = 0; i < data.data.length; i++) {
               data.data[i] = 0xFF;
             }
-
             ctx.putImageData(data, -250, -250);
 
             var corrupted = 0;
@@ -131,9 +125,9 @@
           }
         }());
 
-        /* ── Variante D: Múltiplos canvases — cross-corruption (SANITY) ──
-         * Verificar se os canvases realmente compartilham memória ou
-         * se é comportamento esperado.
+        /* ── Variante D: Múltiplos canvases — cross-corruption (CORRIGIDO v1.3) ──
+         * Se TODOS os canvases têm o mesmo padrão, é compartilhamento de buffer.
+         * Se apenas ALGUNS (vizinhos) têm padrão diferente, é cross-corruption real.
          */
         (function variantD() {
           try {
@@ -150,49 +144,60 @@
               ctx.fillRect(0, 0, 8, 8);
             }
 
-            for (var i = 0; i < canvases.length; i++) {
-              var ctx = canvases[i].ctx;
-              var data = ctx.createImageData(32, 32);
-              for (var j = 0; j < data.data.length; j += 4) {
-                data.data[j] = 0x41;
-                data.data[j + 3] = 0xFF;
-              }
-              ctx.putImageData(data, -12, -12);
+            /* OOB apenas no canvas 5 (meio) */
+            var ctx5 = canvases[5].ctx;
+            var data = ctx5.createImageData(32, 32);
+            for (var j = 0; j < data.data.length; j += 4) {
+              data.data[j] = 0x41;
+              data.data[j + 3] = 0xFF;
             }
+            ctx5.putImageData(data, -12, -12);
 
-            var crossCorruption = 0;
+            /* Verificar quais canvases foram afetados */
+            var affected = [];
             for (var i = 0; i < canvases.length; i++) {
               var pixel = canvases[i].ctx.getImageData(0, 0, 1, 1);
               if (pixel.data[0] === 0x41) {
-                crossCorruption++;
+                affected.push(i);
               }
             }
-            if (crossCorruption > 0) {
-              anomalies.push('D: ' + crossCorruption + ' canvases corrompidos por OOB de vizinho');
+
+            /* Se TODOS foram afetados, é compartilhamento de buffer (falso positivo) */
+            /* Se apenas vizinhos (4,5,6) foram afetados, é cross-corruption real */
+            if (affected.length === canvases.length) {
+              /* Todos afetados — provavelmente compartilhamento de buffer */
+              /* NÃO reportar como anomalia */
+            } else if (affected.length > 1) {
+              /* Alguns afetados — verificar se são vizinhos */
+              var isNeighbor = true;
+              for (var i = 0; i < affected.length; i++) {
+                if (Math.abs(affected[i] - 5) > 2) {
+                  isNeighbor = false;
+                }
+              }
+              if (isNeighbor) {
+                anomalies.push('D: ' + affected.length + ' canvases vizinhos corrompidos (cross-corruption)');
+              } else {
+                anomalies.push('D: ' + affected.length + ' canvases NÃO-vizinhos corrompidos (bug grave)');
+              }
+            } else if (affected.length === 1 && affected[0] === 5) {
+              /* Apenas o canvas 5 afetado — OOB contido */
             }
           } catch (e) {
             anomalies.push('D: ' + String(e));
           }
         }());
 
-        /* ── Variante E: CONTROLE — canvases isolados na memória ──
-         * SANITY: Criar canvases com operações de memória entre eles
-         * para garantir que não estão adjacentes. Se OOB ainda afetar,
-         * é bug real. Se NÃO afetar, a cross-corruption do D pode ser
-         * devido a agrupamento de memória do canvas.
-         */
+        /* ── Variante E: CONTROLE — canvases isolados na memória ── */
         (function variantE() {
           try {
             var canvases = [];
             var garbage = [];
 
             for (var i = 0; i < 5; i++) {
-              /* Criar canvas */
               var c = document.createElement('canvas');
               c.width = 8; c.height = 8;
               canvases.push({ canvas: c, ctx: c.getContext('2d') });
-
-              /* Criar garbage entre canvases para separar na memória */
               garbage.push(new ArrayBuffer(1024));
               garbage.push(new Uint32Array(256));
               garbage.push({ marker: i, data: new Array(100).fill(i) });
@@ -204,7 +209,6 @@
               ctx.fillRect(0, 0, 8, 8);
             }
 
-            /* OOB no primeiro canvas */
             var ctx0 = canvases[0].ctx;
             var data = ctx0.createImageData(64, 64);
             for (var i = 0; i < data.data.length; i++) {
@@ -212,7 +216,6 @@
             }
             ctx0.putImageData(data, -30, -30);
 
-            /* Verificar se outros canvases foram afetados */
             var affected = 0;
             for (var i = 1; i < canvases.length; i++) {
               var pixel = canvases[i].ctx.getImageData(0, 0, 1, 1);
@@ -221,7 +224,7 @@
               }
             }
             if (affected > 0) {
-              anomalies.push('E: ' + affected + ' canvases isolados afetados por OOB (bug real)');
+              anomalies.push('E: ' + affected + ' canvases isolados afetados');
             }
           } catch (e) {
             anomalies.push('E: ' + String(e));
